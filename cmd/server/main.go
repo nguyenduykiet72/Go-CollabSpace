@@ -27,7 +27,7 @@ func main() {
 		}
 	}(logger.Log)
 
-	logger.Log.Info("Starting server", zap.String("Port", cfg.Server.Port))
+	logger.Log.Info("Starting server", zap.Int("Port", cfg.Server.Port))
 
 	db, err := initialize.InitDB(cfg.Database)
 	if err != nil {
@@ -39,7 +39,7 @@ func main() {
 	userController := controller.NewUserController(userService)
 	r := router.NewRouter(userController)
 
-	addr := fmt.Sprintf(":%s", cfg.Server.Port)
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	logger.Log.Info("Server is running on ", zap.String("address:", addr))
 
 	if err := r.Run(addr); err != nil {

@@ -2,55 +2,60 @@ package config
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/spf13/viper"
+	"github.com/ilyakaznacheev/cleanenv"
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Server   ServerConfig `mapstructure:"server" validate:"required"`
-	Database DBConfig     `mapstructure:"database" validate:"required"`
+	Server   ServerConfig `yaml:"server"`
+	Database DBConfig     `yaml:"database"`
 }
 
 type ServerConfig struct {
-	Port string `mapstructure:"port" validate:"required"`
-	Mode string `mapstructure:"mode" validate:"required"`
+	Port int    `yaml:"port" env:"PORT" env-default:"8080" validate:"required"`
+	Mode string `yaml:"mode" env:"MODE" env-default:"development" validate:"required"`
 }
 
 type DBConfig struct {
-	Host     string `mapstructure:"host" validate:"required"`
-	Port     string `mapstructure:"port" validate:"required"`
-	User     string `mapstructure:"user" validate:"required"`
-	Password string `mapstructure:"password" validate:"required"`
-	DBName   string `mapstructure:"dbname" validate:"required"`
-	Type     string `mapstructure:"type" validate:"required,oneof=postgres mysql"`
+	Host     string `yaml:"host" env:"DB_HOST" validate:"required"`
+	Port     int    `yaml:"port" env:"DB_PORT" validate:"required"`
+	User     string `yaml:"username" env:"DB_USER" validate:"required"`
+	Password string `yaml:"password" env:"DB_PASSWORD" validate:"required"`
+	DBName   string `yaml:"dbname" env:"DB_NAME" validate:"required"`
+	Type     string `yaml:"type" env:"DB_TYPE" env-default:"postgres" validate:"required,oneof=postgres mysql"`
 }
 
+var (
+	cfg  *Config
+	once sync.Once
+)
+
 func LoadConfig() (*Config, error) {
-	v := viper.New()
+	var err error
 
-	v.AddConfigPath(".")
-	v.SetConfigName(".env")
-	v.SetConfigFile(".env")
+	once.Do(func() {
+		cfg = &Config{}
 
-	v.AutomaticEnv()
+		_ = godotenv.Load()
 
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("error reading config file: %w", err)
+		err := cleanenv.ReadConfig("./config/config.dev.yml", cfg)
+		if err != nil {
+			fmt.Println("Config file not found, trying environment variables:", err)
+			if envErr := cleanenv.ReadEnv(cfg); envErr != nil {
+				err = envErr
+				return
+			}
 		}
-	}
 
-	var config Config
+		validate := validator.New()
+		if validateErr := validate.Struct(cfg); validateErr != nil {
+			err = fmt.Errorf("config validation failed :%w", validateErr)
+			return
+		}
+	})
 
-	if err := v.Unmarshal(&config); err != nil {
-		return nil, fmt.Errorf("error unmarshalling config: %w", err)
-	}
-
-	validate := validator.New()
-	if err := validate.Struct(&config); err != nil {
-		return nil, fmt.Errorf("error validating config: %w", err)
-	}
-
-	return &config, nil
+	return cfg, err
 }

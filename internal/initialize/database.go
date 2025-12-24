@@ -13,8 +13,8 @@ import (
 )
 
 func InitDB(cfg config.DBConfig) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d",
+		cfg.Host, cfg.User, cfg.Password, cfg.DBName, cfg.Port)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormLogger.Default.LogMode(gormLogger.Info),
