@@ -2,11 +2,8 @@ package main
 
 import (
 	"Go-CollabSpace/config"
-	"Go-CollabSpace/internal/controller"
 	"Go-CollabSpace/internal/initialize"
-	"Go-CollabSpace/internal/repository"
-	"Go-CollabSpace/internal/router"
-	"Go-CollabSpace/internal/service"
+	"Go-CollabSpace/internal/server"
 	"Go-CollabSpace/pkg/logger"
 	"fmt"
 
@@ -16,15 +13,12 @@ import (
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		panic(fmt.Errorf("Error loading config: %v", err))
+		panic(fmt.Errorf("error loading config: %v", err))
 	}
 
 	logger.InitLogger(cfg.Server.Mode)
 	defer func(Log *zap.Logger) {
-		err := Log.Sync()
-		if err != nil {
-
-		}
+		_ = Log.Sync()
 	}(logger.Log)
 
 	logger.Log.Info("Starting server", zap.Int("Port", cfg.Server.Port))
@@ -34,15 +28,8 @@ func main() {
 		return
 	}
 
-	userRepo := repository.NewUserRepository(db)
-	userService := service.NewUserService(userRepo)
-	userController := controller.NewUserController(userService)
-	r := router.NewRouter(userController)
-
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	logger.Log.Info("Server is running on ", zap.String("address:", addr))
-
-	if err := r.Run(addr); err != nil {
-		logger.Log.Fatal("Server start failed", zap.Error(err))
+	srv := server.NewServer(cfg, db)
+	if err := srv.Run(); err != nil {
+		logger.Log.Fatal("Failed", zap.Error(err))
 	}
 }

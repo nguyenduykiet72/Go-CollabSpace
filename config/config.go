@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/ilyakaznacheev/cleanenv"
@@ -12,6 +13,7 @@ import (
 type Config struct {
 	Server   ServerConfig `yaml:"server"`
 	Database DBConfig     `yaml:"database"`
+	JWT      JWTConfig    `yaml:"jwt"`
 }
 
 type ServerConfig struct {
@@ -28,6 +30,13 @@ type DBConfig struct {
 	Type     string `yaml:"type" env:"DB_TYPE" env-default:"postgres" validate:"required,oneof=postgres mysql"`
 }
 
+type JWTConfig struct {
+	AccessTokenSecret    string        `yaml:"accessTokenSecret" env:"JWT_ACCESS_SECRET" validate:"required"`
+	RefreshTokenSecret   string        `yaml:"refreshTokenSecret" env:"JWT_REFRESH_SECRET" validate:"required"`
+	AccessTokenDuration  time.Duration `yaml:"accessTokenDuration" env:"JWT_ACCESS_DURATION" env-default:"1h"`
+	RefreshTokenDuration time.Duration `yaml:"refreshTokenDuration" env:"JWT_REFRESH_DURATION" env-default:"168h"` // 7 days
+}
+
 var (
 	cfg  *Config
 	once sync.Once
@@ -41,7 +50,7 @@ func LoadConfig() (*Config, error) {
 
 		_ = godotenv.Load()
 
-		err := cleanenv.ReadConfig("./config/config.dev.yml", cfg)
+		err = cleanenv.ReadConfig("./config/config.dev.yml", cfg)
 		if err != nil {
 			fmt.Println("Config file not found, trying environment variables:", err)
 			if envErr := cleanenv.ReadEnv(cfg); envErr != nil {

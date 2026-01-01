@@ -6,12 +6,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(userController *controller.UserController) *gin.Engine {
-	r := gin.Default()
+type AppHandlers struct {
+	UserController *controller.UserController
+}
 
-	v1 := r.Group("/api/v1/user")
+func SetUpRoutes(r *gin.Engine, ah AppHandlers) {
+	v1 := r.Group("/api/v1")
 	{
-		v1.POST("register", userController.Register)
+		userGroup := v1.Group("/users")
+		{
+			userGroup.POST("/register", ah.UserController.Register)
+			userGroup.POST("/login", ah.UserController.Login)
+		}
 	}
-	return r
 }

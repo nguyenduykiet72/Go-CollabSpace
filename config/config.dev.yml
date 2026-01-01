@@ -8,3 +8,7 @@ database:
     username: "postgres"
     dbname: "CollabSpace"
     type: "postgres"
+
+jwt:
+  accessTokenDuration: "1h"
+  refreshTokenDuration: "168h"

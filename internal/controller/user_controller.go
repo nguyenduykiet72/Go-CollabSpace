@@ -1,35 +1,60 @@
 package controller
 
 import (
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/dto"
 	"Go-CollabSpace/internal/service"
+	"Go-CollabSpace/pkg/httpx"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type UserController struct {
-	service service.IUserService
+	userService service.IUserService
 }
 
-func NewUserController(service service.IUserService) *UserController {
-	return &UserController{service: service}
+func NewUserController(userService service.IUserService) *UserController {
+	return &UserController{userService: userService}
 }
 
 func (c *UserController) Register(ctx *gin.Context) {
-	var req struct {
-		Name  string `json:"name" binding:"required"`
-		Email string `json:"email" binding:"required,email"`
-	}
+	var req dto.RegisterRequest
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.Error(apperror.ErrBadRequest)
 		return
 	}
 
-	if err := c.service.Register(req.Name, req.Email); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	resp, err := c.userService.Register(ctx.Request.Context(), req)
+	if err != nil {
+		ctx.Error(err)
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, gin.H{"message": "User created successfully!"})
+	ctx.JSON(http.StatusCreated,
+		httpx.Success(resp, "User created successfully"),
+	)
+}
+
+func (c *UserController) Login(ctx *gin.Context) {
+	var req dto.LoginRequest
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	userAgent := ctx.GetHeader("User-Agent")
+	if userAgent == "" {
+		userAgent = "unknown"
+	}
+
+	tokenResp, err := c.userService.Login(ctx.Request.Context(), req, userAgent)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, httpx.Success(tokenResp, "Login successful"))
 }
