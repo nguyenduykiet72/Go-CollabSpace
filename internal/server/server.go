@@ -37,15 +37,22 @@ func (s *Server) InitEngine() {
 
 	tokenProvider := token.NewJWTProvider(token.ConfigToken(s.cfg.JWT))
 
+	// -- User Module --
 	userRepo := repository.NewUserRepository(s.db)
 	userService := service.NewUserService(userRepo, tokenProvider)
 	userController := controller.NewUserController(userService)
 
+	// -- Workspace Module --
+	workspaceRepo := repository.NewWorkspaceRepository(s.db)
+	workspaceService := service.NewWorkspaceService(workspaceRepo)
+	workspaceController := controller.NewWorkspaceController(workspaceService)
+
 	handlers := router.AppHandlers{
-		UserController: userController,
+		UserController:      userController,
+		WorkspaceController: workspaceController,
 	}
 
-	router.SetUpRoutes(r, handlers)
+	router.SetUpRoutes(r, handlers, tokenProvider)
 
 	s.engine = r
 }
