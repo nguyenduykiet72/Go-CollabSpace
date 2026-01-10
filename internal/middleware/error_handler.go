@@ -21,10 +21,9 @@ func ErrorHandler() gin.HandlerFunc {
 
 		var appErr *apperror.AppError
 		if errors.As(err, &appErr) {
-			c.JSON(appErr.HTTPStatus, httpx.Fail(appErr.HTTPStatus, appErr.Message))
+			httpx.ErrorResponse(c, appErr.HTTPStatus, appErr.Code, appErr.Message)
 			return
 		}
-
-		c.JSON(http.StatusInternalServerError, httpx.Fail(http.StatusInternalServerError, "Internal Server Error"))
+		httpx.ErrorResponse(c, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError), "Internal server error")
 	}
 }

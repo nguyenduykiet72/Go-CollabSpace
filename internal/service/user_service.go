@@ -1,6 +1,7 @@
 package service
 
 import (
+	"Go-CollabSpace/internal/common/apperror"
 	"Go-CollabSpace/internal/common/token"
 	"Go-CollabSpace/internal/dto"
 	"Go-CollabSpace/internal/model"
@@ -30,7 +31,7 @@ func NewUserService(userRepo repository.IUserRepository, tokenProvider token.ITo
 func (u *UserService) Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error) {
 	existingUser, err := u.userRepo.GetUserByEmail(ctx, req.Email)
 	if err == nil && existingUser != nil {
-		return nil, errors.New("email already exists")
+		return nil, apperror.ErrEmailAlreadyExists
 	}
 
 	hashPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)

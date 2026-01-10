@@ -1,9 +1,9 @@
 package apperror
 
 type AppError struct {
+	HTTPStatus int
 	Code       string
 	Message    string
-	HTTPStatus int
 }
 
 func (e *AppError) Error() string {

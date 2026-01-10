@@ -22,13 +22,13 @@ func (c *UserController) Register(ctx *gin.Context) {
 	var req dto.RegisterRequest
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.Error(apperror.ErrBadRequest)
+		_ = ctx.Error(apperror.ErrBadRequest)
 		return
 	}
 
 	resp, err := c.userService.Register(ctx.Request.Context(), req)
 	if err != nil {
-		ctx.Error(err)
+		_ = ctx.Error(err)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (c *UserController) Login(ctx *gin.Context) {
 	var req dto.LoginRequest
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.Error(apperror.ErrBadRequest)
+		_ = ctx.Error(apperror.ErrBadRequest)
 		return
 	}
 
@@ -52,7 +52,7 @@ func (c *UserController) Login(ctx *gin.Context) {
 
 	tokenResp, err := c.userService.Login(ctx.Request.Context(), req, userAgent)
 	if err != nil {
-		ctx.Error(err)
+		_ = ctx.Error(err)
 		return
 	}
 

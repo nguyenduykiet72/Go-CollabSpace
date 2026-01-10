@@ -5,10 +5,8 @@ import (
 	"Go-CollabSpace/internal/model"
 	"Go-CollabSpace/internal/repository"
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type IWorkspaceService interface {
@@ -31,9 +29,6 @@ func (s *WorkspaceService) Create(ctx context.Context, req dto.CreateWorkspaceRe
 	}
 
 	if err := s.CreateWorkSpace(ctx, newWorkspace); err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return nil, errors.New("work space with the slug already exists")
-		}
 		return nil, err
 	}
 
