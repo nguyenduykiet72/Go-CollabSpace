@@ -1,12 +1,12 @@
 package middleware
 
 import (
-	"Go-CollabSpace/internal/common/apperror"
-	"Go-CollabSpace/internal/common/token"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/common/token"
 )
 
 const (
@@ -26,22 +26,14 @@ func AuthMiddleware(tokenProvider token.ITokenProvider) gin.HandlerFunc {
 
 		fields := strings.Fields(authHeader)
 		if len(fields) < 2 {
-			_ = ctx.Error(&apperror.AppError{
-				HTTPStatus: http.StatusUnauthorized,
-				Code:       apperror.ErrUnauthorized.Code,
-				Message:    "invalid authorization header format",
-			})
+			_ = ctx.Error(apperror.ErrUnauthorized.WithMessage("invalid authorization header format"))
 			ctx.Abort()
 			return
 		}
 
 		authType := fields[0]
 		if authType != authorizationTypeBearer {
-			_ = ctx.Error(&apperror.AppError{
-				HTTPStatus: http.StatusUnauthorized,
-				Code:       apperror.ErrUnauthorized.Code,
-				Message:    "unsupported authorization type",
-			})
+			_ = ctx.Error(apperror.ErrUnauthorized.WithMessage("invalid authorization header type"))
 			ctx.Abort()
 			return
 		}
@@ -50,11 +42,7 @@ func AuthMiddleware(tokenProvider token.ITokenProvider) gin.HandlerFunc {
 
 		payload, err := tokenProvider.ValidateAccessToken(accessToken)
 		if err != nil {
-			_ = ctx.Error(&apperror.AppError{
-				HTTPStatus: http.StatusUnauthorized,
-				Code:       apperror.ErrUnauthorized.Code,
-				Message:    "invalid credentials",
-			})
+			_ = ctx.Error(apperror.ErrUnauthorized.WithMessage("invalid credentials"))
 			ctx.Abort()
 			return
 		}

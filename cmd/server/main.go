@@ -1,13 +1,14 @@
 package main
 
 import (
+	"fmt"
+
+	"go.uber.org/zap"
+
 	"Go-CollabSpace/config"
 	"Go-CollabSpace/internal/initialize"
 	"Go-CollabSpace/internal/server"
 	"Go-CollabSpace/pkg/logger"
-	"fmt"
-
-	"go.uber.org/zap"
 )
 
 func main() {

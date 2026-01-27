@@ -1,15 +1,16 @@
 package repository
 
 import (
-	"Go-CollabSpace/internal/common/apperror"
-	"Go-CollabSpace/internal/constant"
-	"Go-CollabSpace/internal/model"
 	"context"
 	"errors"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/constant"
+	"Go-CollabSpace/internal/model"
 )
 
 type IWorkspaceRepository interface {
@@ -29,14 +30,14 @@ func (w workspaceRepository) CreateWorkSpace(ctx context.Context, workspace *mod
 	return w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(workspace).Error; err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				return apperror.ErrSlugAlreadyExists
+				return apperror.ErrSlugExists
 			}
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 				if strings.Contains(pgErr.ConstraintName, "slug") {
-					return apperror.ErrSlugAlreadyExists
+					return apperror.ErrSlugExists
 				}
-				return apperror.ErrSlugAlreadyExists
+				return apperror.ErrSlugExists
 			}
 			return err
 		}

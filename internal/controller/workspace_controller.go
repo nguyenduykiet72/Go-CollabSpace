@@ -1,14 +1,15 @@
 package controller
 
 import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
 	"Go-CollabSpace/internal/common/apperror"
 	"Go-CollabSpace/internal/common/token"
 	"Go-CollabSpace/internal/dto"
 	"Go-CollabSpace/internal/service"
 	"Go-CollabSpace/pkg/httpx"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
 )
 
 type WorkspaceController struct {
@@ -45,5 +46,5 @@ func (c *WorkspaceController) Create(ctx *gin.Context) {
 		return
 	}
 
-	httpx.Created(ctx, resp)
+	httpx.WriteJSON(ctx, http.StatusCreated, resp, "Workspace created successfully")
 }

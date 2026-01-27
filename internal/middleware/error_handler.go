@@ -1,12 +1,9 @@
 package middleware
 
 import (
-	"Go-CollabSpace/internal/common/apperror"
-	"Go-CollabSpace/pkg/httpx"
-	"errors"
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+
+	"Go-CollabSpace/pkg/httpx"
 )
 
 func ErrorHandler() gin.HandlerFunc {
@@ -19,11 +16,8 @@ func ErrorHandler() gin.HandlerFunc {
 
 		err := c.Errors.Last().Err
 
-		var appErr *apperror.AppError
-		if errors.As(err, &appErr) {
-			httpx.ErrorResponse(c, appErr.HTTPStatus, appErr.Code, appErr.Message)
-			return
-		}
-		httpx.ErrorResponse(c, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError), "Internal server error")
+		httpx.WriteError(c, err)
+
+		c.Abort()
 	}
 }

@@ -1,7 +1,6 @@
 # ==============================================================================
 # 1. LOAD ENVIRONMENT VARIABLES
 # ==============================================================================
-# Check nếu file .env tồn tại thì load vào
 ifneq (,$(wildcard ./.env))
     include .env
     export
@@ -10,94 +9,180 @@ endif
 # ==============================================================================
 # 2. VARIABLES & DEFAULTS
 # ==============================================================================
-# Tên App
 APP_NAME=Go-CollabSpace
-
-# Đường dẫn Migration
 MIGRATION_DIR=migrations
 
-# Database DSN: Nếu trong .env không có, dùng giá trị mặc định (Fallback)
-# Lưu ý: DB_URL phải khớp với format của Goose/Gorm
 DB_DSN := host=$(DB_HOST) \
           port=$(DB_PORT) \
           user=$(DB_USER) \
           password=$(DB_PASSWORD) \
           dbname=$(DB_NAME) \
           sslmode=disable
+
 # ==============================================================================
 # 3. COMMANDS
 # ==============================================================================
 
-# Help: Hiển thị danh sách lệnh (Mặc định khi gõ 'make')
 .PHONY: help
 help:
 	@echo "Usage: make [command]"
 	@echo ""
-	@echo "Commands:"
-	@echo "  run              Start the API server (cmd/server/main.go)"
+	@echo "Development:"
+	@echo "  run              Start the API server"
 	@echo "  build            Build binary to bin/ folder"
-	@echo "  tidy             Format code and tidy mod"
+	@echo "  tidy             Tidy go modules"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  fmt              Format code with goimports"
+	@echo "  fmt-check        Check if code is formatted"
+	@echo "  lint             Run golangci-lint"
+	@echo "  test             Run tests"
+	@echo "  test-coverage    Run tests with coverage"
+	@echo "  pre-commit       Run all checks (fmt + lint + test)"
 	@echo ""
 	@echo "Database Migrations (Goose):"
-	@echo "  db-create name=  Create a new SQL migration file (e.g., make db-create name=add_users)"
-	@echo "  db-up            Apply all up migrations"
-	@echo "  db-down          Rollback the last migration"
-	@echo "  db-reset         Rollback all and re-apply (Fresh DB)"
+	@echo "  db-create name=  Create new migration (e.g., make db-create name=add_users)"
+	@echo "  db-up            Apply all migrations"
+	@echo "  db-down          Rollback last migration"
+	@echo "  db-reset         Reset database (down-to 0 + up)"
 	@echo "  db-status        Show migration status"
 	@echo ""
 	@echo "Docker:"
-	@echo "  docker-up        Start DB containers (docker-compose up -d)"
-	@echo "  docker-down      Stop DB containers"
+	@echo "  docker-up        Start containers"
+	@echo "  docker-down      Stop containers"
+	@echo "  docker-logs      View logs"
 
-# --- DEVELOPMENT ---
+# ==============================================================================
+# DEVELOPMENT
+# ==============================================================================
 .PHONY: run
 run:
 	@echo "Running server..."
-	go run cmd/server/main.go
+	@go run cmd/server/main.go
 
 .PHONY: build
 build:
-	@echo "Building binary..."
-	go build -o bin/$(APP_NAME) cmd/server/main.go
+	@echo "🔨 Building binary..."
+	@go build -o bin/$(APP_NAME) cmd/server/main.go
+	@echo "Binary created: bin/$(APP_NAME)"
 
 .PHONY: tidy
 tidy:
-	go fmt ./...
-	go mod tidy
-	go mod verify
+	@echo "🧹 Tidying modules..."
+	@go mod tidy
+	@go mod verify
+	@echo "Modules tidied!"
 
-# --- MIGRATIONS (GOOSE) ---
+# ==============================================================================
+# CODE QUALITY
+# ==============================================================================
+.PHONY: fmt
+fmt:
+	@echo "🎨 Formatting code with goimports..."
+	@goimports -w -local $(APP_NAME) .
+	@echo "Code formatted!"
+
+.PHONY: fmt-check
+fmt-check:
+	@echo "🔍 Checking code format..."
+	@test -z "$$(goimports -l -local $(APP_NAME) . | tee /dev/stderr)" || \
+		(echo "❌ Files need formatting. Run 'make fmt'" && exit 1)
+	@echo "All files properly formatted!"
+
+.PHONY: lint
+lint:
+	@echo "Running golangci-lint..."
+	@golangci-lint run ./...
+	@echo "No linting issues!"
+
+.PHONY: test
+test:
+	@echo "Running tests..."
+	@go test -v -race -short ./...
+
+.PHONY: test-coverage
+test-coverage:
+	@echo "📊 Running tests with coverage..."
+	@go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report: coverage.html"
+
+.PHONY: pre-commit
+pre-commit: fmt lint test
+	@echo "All pre-commit checks passed!"
+
+# ==============================================================================
+# DATABASE MIGRATIONS (GOOSE)
+# ==============================================================================
 .PHONY: db-create
 db-create:
-	@echo "Creating migration file..."
-	@if [ -z "$(name)" ]; then echo "Error: name is required (make db-create name=something)"; exit 1; fi
-	goose -dir $(MIGRATION_DIR) create $(name) sql
+	@if [ -z "$(name)" ]; then \
+		echo "❌ Error: name is required"; \
+		echo "Usage: make db-create name=add_users"; \
+		exit 1; \
+	fi
+	@echo "Creating migration: $(name)"
+	@goose -dir $(MIGRATION_DIR) create $(name) sql
+	@echo "Migration created!"
 
 .PHONY: db-up
 db-up:
-	@echo "Migrating UP..."
-	goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" up
+	@echo "⬆Running migrations..."
+	@goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" up
+	@echo "Migrations applied!"
 
 .PHONY: db-down
 db-down:
-	@echo "Migrating DOWN (Rollback)..."
-	goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" down
+	@echo "⬇Rolling back last migration..."
+	@goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" down
+	@echo "Migration rolled back!"
 
 .PHONY: db-status
 db-status:
-	goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" status
+	@echo "Migration status:"
+	@goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" status
 
 .PHONY: db-reset
 db-reset:
-	@echo "Resetting Database..."
-	goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" down-to 0
-	goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" up
+	@echo "Resetting database..."
+	@goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" down-to 0
+	@goose -dir $(MIGRATION_DIR) postgres "$(DB_DSN)" up
+	@echo "Database reset complete!"
 
-# --- DOCKER (Optional - Nếu bạn dùng docker-compose cho DB) ---
+# ==============================================================================
+# DOCKER
+# ==============================================================================
 .PHONY: docker-up
 docker-up:
-	docker-compose up -d
+	@echo "Starting containers..."
+	@docker-compose up -d
+	@echo "Containers started!"
 
 .PHONY: docker-down
 docker-down:
-	docker-compose down
+	@echo "Stopping containers..."
+	@docker-compose down
+	@echo "Containers stopped!"
+
+.PHONY: docker-logs
+docker-logs:
+	@docker-compose logs -f
+
+# ==============================================================================
+# TOOLS INSTALLATION
+# ==============================================================================
+.PHONY: install-tools
+install-tools:
+	@echo "📦 Installing development tools..."
+	@go install golang.org/x/tools/cmd/goimports@latest
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@go install github.com/pressly/goose/v3/cmd/goose@latest
+	@echo "Tools installed!"
+
+.PHONY: verify-tools
+verify-tools:
+	@echo "🔍 Verifying tools..."
+	@which goimports || echo "❌ goimports not found"
+	@which golangci-lint || echo "❌ golangci-lint not found"
+	@which goose || echo "❌ goose not found"
+	@echo "Verification complete!"

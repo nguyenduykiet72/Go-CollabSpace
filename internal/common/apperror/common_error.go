@@ -3,34 +3,12 @@ package apperror
 import "net/http"
 
 var (
-	ErrNotFound = &AppError{
-		Code:       "NOT_FOUND",
-		Message:    "Resource not found",
-		HTTPStatus: http.StatusNotFound,
-	}
-	ErrUnauthorized = &AppError{
-		HTTPStatus: http.StatusUnauthorized,
-		Message:    "Unauthorized",
-		Code:       "UNAUTHORIZED",
-	}
-	ErrBadRequest = &AppError{
-		Code:       "BAD_REQUEST",
-		Message:    "Bad request",
-		HTTPStatus: http.StatusBadRequest,
-	}
-	ErrInternal = &AppError{
-		Code:       "INTERNAL_ERROR",
-		Message:    "Internal server error",
-		HTTPStatus: http.StatusInternalServerError,
-	}
-	ErrEmailAlreadyExists = &AppError{
-		Code:       "EMAIL_ALREADY_EXISTS",
-		Message:    "Email already exists",
-		HTTPStatus: http.StatusBadRequest,
-	}
-	ErrSlugAlreadyExists = &AppError{
-		Code:       "SLUG_ALREADY_EXISTS",
-		Message:    "Workspace with this slug already exists",
-		HTTPStatus: http.StatusConflict,
-	}
+	ErrInvalidInput = NewAppError(http.StatusBadRequest, "Invalid input", "INVALID_INPUT")
+	ErrUnauthorized = NewAppError(http.StatusUnauthorized, "Unauthorized", "UNAUTHORIZED")
+	ErrNotFound     = NewAppError(http.StatusNotFound, "Resource not found", "NOT_FOUND")
+	ErrBadRequest   = NewAppError(http.StatusBadRequest, "Resource not found", "NOT_FOUND")
+	ErrInternal     = NewAppError(http.StatusInternalServerError, "Internal server error", "INTERNAL_ERROR")
+	ErrEmailExists  = NewAppError(http.StatusConflict, "Email already exists", "EMAIL_EXISTS")
+	ErrUserBlocked  = NewAppError(http.StatusForbidden, "User is blocked", "USER_BLOCKED")
+	ErrSlugExists   = NewAppError(http.StatusConflict, "Slug already exists", "SLUG_EXISTS")
 )

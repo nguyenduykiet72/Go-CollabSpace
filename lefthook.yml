@@ -7,7 +7,7 @@ pre-commit:
       run: go mod tidy && git add go.mod go.sum
     format:
       glob: "*.go"
-      run: go fmt -w {staged_files} && git add {staged_files}
+      run: gofmt -w {staged_files} && git add {staged_files}
     lint:
       glob: "*.go"
       run: golangci-lint run --new-from-rev HEAD ./...

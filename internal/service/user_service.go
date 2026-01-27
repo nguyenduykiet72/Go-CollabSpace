@@ -1,37 +1,43 @@
 package service
 
 import (
-	"Go-CollabSpace/internal/common/apperror"
-	"Go-CollabSpace/internal/common/token"
-	"Go-CollabSpace/internal/dto"
-	"Go-CollabSpace/internal/model"
-	"Go-CollabSpace/internal/repository"
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
+
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/dto"
+	"Go-CollabSpace/internal/model"
 )
 
-type IUserService interface {
-	Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error)
-	Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error)
+type UserRepo interface {
+	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
+	CreateUser(ctx context.Context, user *model.User) error
+	CreateSession(ctx context.Context, session *model.Session) error
+}
+
+type TokenProvider interface {
+	GenerateAccessToken(userId uuid.UUID, role string) (string, error)
+	GenerateRefreshToken() (string, error)
 }
 
 type UserService struct {
-	userRepo      repository.IUserRepository
-	tokenProvider token.ITokenProvider
+	userRepo      UserRepo
+	tokenProvider TokenProvider
 }
 
-func NewUserService(userRepo repository.IUserRepository, tokenProvider token.ITokenProvider) IUserService {
+func NewUserService(userRepo UserRepo, tokenProvider TokenProvider) *UserService {
 	return &UserService{userRepo: userRepo, tokenProvider: tokenProvider}
 }
 
 func (u *UserService) Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error) {
 	existingUser, err := u.userRepo.GetUserByEmail(ctx, req.Email)
 	if err == nil && existingUser != nil {
-		return nil, apperror.ErrEmailAlreadyExists
+		return nil, apperror.ErrEmailExists
 	}
 
 	hashPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -60,24 +66,24 @@ func (u *UserService) Register(ctx context.Context, req dto.RegisterRequest) (*d
 func (u *UserService) Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error) {
 	user, err := u.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("invalid email or password")
+		if errors.Is(err, apperror.ErrNotFound) {
+			return nil, apperror.NewAppError(http.StatusBadRequest, "invalid email or password", "")
 		}
 		return nil, err
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.UserPassword), []byte(req.Password)); err != nil {
-		return nil, errors.New("invalid email or password")
+		return nil, apperror.NewAppError(http.StatusBadRequest, "invalid email or password", "")
 	}
 
 	accessToken, err := u.tokenProvider.GenerateAccessToken(user.UserID, "Viewer")
 	if err != nil {
-		return nil, err
+		return nil, apperror.ErrInternal.WithRootErr(err)
 	}
 
 	refreshToken, err := u.tokenProvider.GenerateRefreshToken()
 	if err != nil {
-		return nil, err
+		return nil, apperror.ErrInternal.WithRootErr(err)
 	}
 
 	refreshTokenTTL := 7 * 24 * time.Hour
@@ -90,12 +96,11 @@ func (u *UserService) Login(ctx context.Context, req dto.LoginRequest, userAgent
 	}
 
 	if err := u.userRepo.CreateSession(ctx, session); err != nil {
-		return nil, err
+		return nil, apperror.ErrInternal.WithRootErr(err)
 	}
 
 	return &dto.TokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
-
 }

@@ -1,21 +1,27 @@
 package controller
 
 import (
-	"Go-CollabSpace/internal/common/apperror"
-	"Go-CollabSpace/internal/dto"
-	"Go-CollabSpace/internal/service"
-	"Go-CollabSpace/pkg/httpx"
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/dto"
+	"Go-CollabSpace/pkg/httpx"
 )
 
-type UserController struct {
-	userService service.IUserService
+type UserUseCase interface {
+	Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error)
+	Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error)
 }
 
-func NewUserController(userService service.IUserService) *UserController {
-	return &UserController{userService: userService}
+type UserController struct {
+	userService UserUseCase
+}
+
+func NewUserController(userUseCase UserUseCase) *UserController {
+	return &UserController{userService: userUseCase}
 }
 
 func (c *UserController) Register(ctx *gin.Context) {
@@ -32,9 +38,7 @@ func (c *UserController) Register(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated,
-		httpx.Success(resp, "User created successfully"),
-	)
+	httpx.WriteJSON(ctx, http.StatusCreated, resp, "User created successfully")
 }
 
 func (c *UserController) Login(ctx *gin.Context) {
@@ -56,5 +60,5 @@ func (c *UserController) Login(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, httpx.Success(tokenResp, "Login successful"))
+	httpx.WriteJSON(ctx, http.StatusOK, tokenResp, "Login successful")
 }

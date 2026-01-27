@@ -1,44 +1,42 @@
 package repository
 
 import (
-	"Go-CollabSpace/internal/model"
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/model"
 )
 
-type IUserRepository interface {
-	CreateUser(ctx context.Context, user *model.User) error
-	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
-	GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error)
-
-	CreateSession(ctx context.Context, session *model.Session) error
-	RevokeSession(ctx context.Context, id uuid.UUID) error
-}
-
-type userRepository struct {
+type UserRepository struct {
 	db *gorm.DB
 }
 
-func NewUserRepository(db *gorm.DB) IUserRepository {
-	return &userRepository{db: db}
+func NewUserRepository(dbGrm *gorm.DB) *UserRepository {
+	return &UserRepository{db: dbGrm}
 }
 
-func (u userRepository) CreateUser(ctx context.Context, user *model.User) error {
+func (u *UserRepository) CreateUser(ctx context.Context, user *model.User) error {
 	return u.db.WithContext(ctx).Create(user).Error
 }
 
-func (u userRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+func (u *UserRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
 	err := u.db.WithContext(ctx).Where("user_email = ?", email).First(&user).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrNotFound
+		}
 		return nil, err
 	}
+
 	return &user, nil
 }
 
-func (u userRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
+func (u *UserRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	var user model.User
 	err := u.db.WithContext(ctx).First(&user, "user_id = ?", id).Error
 	if err != nil {
@@ -47,10 +45,10 @@ func (u userRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*model.U
 	return &user, nil
 }
 
-func (u userRepository) CreateSession(ctx context.Context, session *model.Session) error {
+func (u *UserRepository) CreateSession(ctx context.Context, session *model.Session) error {
 	return u.db.WithContext(ctx).Create(session).Error
 }
 
-func (u userRepository) RevokeSession(ctx context.Context, id uuid.UUID) error {
+func (u *UserRepository) RevokeSession(ctx context.Context, id uuid.UUID) error {
 	return u.db.WithContext(ctx).Model(&model.Session{}).Where("sess_id = ?", id).Update("sess_is_blocked", true).Error
 }

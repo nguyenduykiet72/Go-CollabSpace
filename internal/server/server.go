@@ -1,6 +1,14 @@
 package server
 
 import (
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
 	"Go-CollabSpace/config"
 	"Go-CollabSpace/internal/common/token"
 	"Go-CollabSpace/internal/controller"
@@ -9,12 +17,6 @@ import (
 	"Go-CollabSpace/internal/router"
 	"Go-CollabSpace/internal/service"
 	"Go-CollabSpace/pkg/logger"
-	"fmt"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 type Server struct {
@@ -64,8 +66,9 @@ func (s *Server) Run() error {
 	logger.Log.Info("Server is running", zap.String("addr", addr))
 
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: s.engine,
+		Addr:              addr,
+		Handler:           s.engine,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	return srv.ListenAndServe()

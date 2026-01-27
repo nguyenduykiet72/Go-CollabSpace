@@ -1,47 +1,53 @@
 package httpx
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"Go-CollabSpace/internal/common/apperror"
 )
 
 type Response struct {
 	StatusCode int         `json:"statusCode"`
 	Message    string      `json:"message"`
 	Data       interface{} `json:"data,omitempty"`
-	Code       string      `json:"code,omitempty"`
+	ErrorKey   string      `json:"errorKey,omitempty"`
 }
 
-func Success(data interface{}, message string) Response {
+func NewSuccess(data interface{}, msg string) Response {
 	return Response{
-		StatusCode: http.StatusOK,
+		StatusCode: 200,
 		Data:       data,
-		Message:    message,
+		Message:    msg,
 	}
 }
 
-func Created(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusCreated, Response{
-		StatusCode: http.StatusCreated,
-		Message:    "Resource created successfully",
+func WriteJSON(c *gin.Context, statusCode int, data interface{}, msg string) {
+	c.JSON(statusCode, Response{
+		StatusCode: statusCode,
+		Message:    msg,
 		Data:       data,
 	})
 }
 
-func ErrorResponse(c *gin.Context, httpStatus int, code string, msg string) {
-	c.JSON(httpStatus, Response{
-		StatusCode: httpStatus,
-		Code:       code,
-		Message:    msg,
+func WriteError(c *gin.Context, err error) {
+	var appErr *apperror.AppError
+	if errors.As(err, &appErr) {
+		c.JSON(appErr.StatusCode, Response{
+			StatusCode: appErr.StatusCode,
+			Message:    appErr.Message,
+			ErrorKey:   appErr.Key,
+			Data:       nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusInternalServerError, Response{
+		StatusCode: http.StatusInternalServerError,
+		Message:    "Internal server error",
+		ErrorKey:   err.Error(),
 		Data:       nil,
 	})
 }
-
-//func Fail(statusCode int, message string) Response {
-//	return Response{
-//		StatusCode: statusCode,
-//		Data:       nil,
-//		Message:    message,
-//	}
-//}

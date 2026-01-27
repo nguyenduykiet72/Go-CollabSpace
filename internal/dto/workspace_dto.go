@@ -8,7 +8,7 @@ import (
 
 type CreateWorkspaceRequest struct {
 	Name string `json:"name" binding:"required,min=3,max=100"`
-	Slug string `json:"slug" binding:"required,min=3,max=50"`
+	Slug string `json:"slug" binding:"required,min=3,max=50,alphanum"`
 }
 
 type WorkSpaceResponse struct {
