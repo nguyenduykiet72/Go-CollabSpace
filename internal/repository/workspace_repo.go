@@ -3,9 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
-	"strings"
 
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"Go-CollabSpace/internal/common/apperror"
@@ -13,32 +12,27 @@ import (
 	"Go-CollabSpace/internal/model"
 )
 
-type IWorkspaceRepository interface {
-	CreateWorkSpace(ctx context.Context, workspace *model.Workspace) error
-	GetRoleByName(ctx context.Context, name string) (*model.Role, error)
-}
-
 type workspaceRepository struct {
 	db *gorm.DB
 }
 
-func NewWorkspaceRepository(db *gorm.DB) IWorkspaceRepository {
+func NewWorkspaceRepository(db *gorm.DB) *workspaceRepository {
 	return &workspaceRepository{db: db}
 }
 
-func (w workspaceRepository) CreateWorkSpace(ctx context.Context, workspace *model.Workspace) error {
+func (w *workspaceRepository) CreateWorkspace(ctx context.Context, workspace *model.Workspace) error {
 	return w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(workspace).Error; err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				return apperror.ErrSlugExists
 			}
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-				if strings.Contains(pgErr.ConstraintName, "slug") {
-					return apperror.ErrSlugExists
-				}
-				return apperror.ErrSlugExists
-			}
+			// var pgErr *pgconn.PgError
+			// if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			// 	if strings.Contains(pgErr.ConstraintName, "slug") {
+			// 		return apperror.ErrSlugExists
+			// 	}
+			// 	return apperror.ErrSlugExists
+			// }
 			return err
 		}
 
@@ -60,9 +54,75 @@ func (w workspaceRepository) CreateWorkSpace(ctx context.Context, workspace *mod
 	})
 }
 
-func (w workspaceRepository) GetRoleByName(ctx context.Context, name string) (*model.Role, error) {
+func (w *workspaceRepository) GetWorkspaceByID(ctx context.Context, id uuid.UUID) (*model.Workspace, error) {
+	var workspace model.Workspace
+	err := w.db.WithContext(ctx).Where("wp_id = ?", id).First(&workspace).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrWorkspaceNotFound
+		}
+		return nil, err
+	}
+	return &workspace, nil
+}
+
+func (w *workspaceRepository) GetWorkspaceBySlug(ctx context.Context, slug string) (*model.Workspace, error) {
+	var workspace model.Workspace
+	err := w.db.WithContext(ctx).Where("wp_slug = ?", slug).First(&workspace).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrWorkspaceNotFound
+		}
+		return nil, err
+	}
+	return &workspace, nil
+}
+
+func (w *workspaceRepository) GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*model.Workspace, error) {
+	var workspaces []*model.Workspace
+	err := w.db.WithContext(ctx).
+		Joins("JOIN tbl_workspace_members ON tbl_workspaces.wp_id = tbl_workspace_members.wpm_workspace_id").
+		Where("tbl_workspace_members.wpm_user_id = ?", userID).
+		Find(&workspaces).Error
+
+	return workspaces, err
+}
+
+func (w *workspaceRepository) IsUserMember(ctx context.Context, workspaceID, userID uuid.UUID) (bool, error) {
+	var count int64
+	err := w.db.WithContext(ctx).
+		Model(&model.WorkspaceMember{}).
+		Where("wpm_workspace_id = ? AND wpm_user_id = ?", workspaceID, userID).
+		Count(&count).Error
+
+	return count > 0, err
+}
+
+func (w *workspaceRepository) GetWorkspaceWithMembers(ctx context.Context, id uuid.UUID) (*model.Workspace, error) {
+	var workspace model.Workspace
+	err := w.db.WithContext(ctx).
+		Preload("Members").
+		Preload("Members.User").
+		Preload("Members.Role").
+		Where("wp_id = ?", id).
+		First(&workspace).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrWorkspaceNotFound
+		}
+		return nil, err
+	}
+	return &workspace, nil
+}
+
+func (w *workspaceRepository) GetRoleByName(ctx context.Context, name string) (*model.Role, error) {
 	var role model.Role
-	if err := w.db.WithContext(ctx).Where("role_name = ?", name).First(&role).Error; err != nil {
+	err := w.db.WithContext(ctx).Where("role_name = ?", name).First(&role).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrRoleNotFound
+		}
 		return nil, err
 	}
 	return &role, nil

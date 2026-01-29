@@ -17,4 +17,5 @@ type WorkSpaceResponse struct {
 	Slug      string    `json:"slug"`
 	OwnerID   uuid.UUID `json:"ownerId"`
 	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 }

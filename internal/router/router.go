@@ -27,7 +27,7 @@ func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvid
 		{
 			wp := protectedGroup.Group("/workspace")
 			{
-				wp.POST("", ah.WorkspaceController.Create)
+				wp.POST("", ah.WorkspaceController.CreateWorkspace)
 			}
 		}
 	}

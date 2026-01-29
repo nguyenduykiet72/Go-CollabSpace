@@ -16,6 +16,9 @@ type Workspace struct {
 	WpCreatedAt time.Time      `gorm:"autoCreateTime;column:wp_created_at"`
 	WpUpdatedAt time.Time      `gorm:"autoUpdateTime;column:wp_updated_at"`
 	WpDeletedAt gorm.DeletedAt `gorm:"index;column:wp_deleted_at"`
+
+	Owner  User              `gorm:"foreignKey:WpOwnerID;references:UserID"`
+	Member []WorkspaceMember `gorm:"foreignKey:WpmWorkspaceID;references:WpID"`
 }
 
 type Role struct {

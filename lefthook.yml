@@ -18,6 +18,6 @@ commit-msg:
       run: |
         head -n1 {1} | grep -E "^(feat|fix|docs|style|refactor|perf|test|chore|revert)\(GCS-[0-9]+\): .+$"
       errorMessage: |
-          Wrong commit message format.
-          Please use the Conventional Commits format:
-          <type>(<scope>): <subject>
+        Wrong commit message format.
+        Please use the Conventional Commits format:
+        <type>(<scope>): <subject>

@@ -1,26 +1,32 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"Go-CollabSpace/internal/common/apperror"
 	"Go-CollabSpace/internal/common/token"
 	"Go-CollabSpace/internal/dto"
-	"Go-CollabSpace/internal/service"
 	"Go-CollabSpace/pkg/httpx"
 )
 
+type WorkspaceUseCase interface {
+	CreateWorkspace(ctx context.Context, req dto.CreateWorkspaceRequest, userID uuid.UUID) (*dto.WorkSpaceResponse, error)
+	GetWorkspaceByID(ctx context.Context, id uuid.UUID) (*dto.WorkSpaceResponse, error)
+}
+
 type WorkspaceController struct {
-	service service.IWorkspaceService
+	workspaceService WorkspaceUseCase
 }
 
-func NewWorkspaceController(service service.IWorkspaceService) *WorkspaceController {
-	return &WorkspaceController{service: service}
+func NewWorkspaceController(workspaceService WorkspaceUseCase) *WorkspaceController {
+	return &WorkspaceController{workspaceService: workspaceService}
 }
 
-func (c *WorkspaceController) Create(ctx *gin.Context) {
+func (c *WorkspaceController) CreateWorkspace(ctx *gin.Context) {
 	payload, exists := ctx.Get("authorization_payload")
 	if !exists {
 		ctx.AbortWithStatus(http.StatusUnauthorized)
@@ -40,7 +46,7 @@ func (c *WorkspaceController) Create(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := c.service.Create(ctx.Request.Context(), req, userClaims.UserID)
+	resp, err := c.workspaceService.CreateWorkspace(ctx.Request.Context(), req, userClaims.UserID)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
