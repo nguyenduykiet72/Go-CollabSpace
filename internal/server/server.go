@@ -49,9 +49,15 @@ func (s *Server) InitEngine() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo)
 	workspaceController := controller.NewWorkspaceController(workspaceService)
 
+	// -- Document Module --
+	documentRepo := repository.NewDocumentRepository(s.db)
+	documentService := service.NewDocumentService(documentRepo, workspaceRepo)
+	documentController := controller.NewDocumentController(documentService)
+
 	handlers := router.AppHandlers{
 		UserController:      userController,
 		WorkspaceController: workspaceController,
+		DocumentController:  documentController,
 	}
 
 	router.SetUpRoutes(r, handlers, tokenProvider)

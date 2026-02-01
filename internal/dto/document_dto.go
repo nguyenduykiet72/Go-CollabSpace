@@ -28,3 +28,8 @@ type DocTreeItem struct {
 	ParentID uuid.UUID     `json:"parentId"`
 	Children []DocTreeItem `json:"children"` // Recursive definition for child documents
 }
+
+type UpdateDocRequest struct {
+	Title string `json:"title"`
+	Emoji string `json:"emoji"`
+}

@@ -12,6 +12,7 @@ import (
 type DocumentRepo interface {
 	CreateDoc(ctx context.Context, req *model.Document) error
 	GetDocsByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]model.Document, error)
+	GetDocByID(ctx context.Context, docID uuid.UUID) (*model.Document, error)
 }
 
 type DocumentService struct {
@@ -72,4 +73,23 @@ func (s *DocumentService) GetWorkspaceDocs(ctx context.Context, workspaceID uuid
 	}
 
 	return response, nil
+}
+
+func (s *DocumentService) GetDocDetail(ctx context.Context, docID uuid.UUID, userID uuid.UUID) (*dto.DocumentResponse, error) {
+	doc, err := s.documentRepo.GetDocByID(ctx, docID)
+	if err != nil {
+		return nil, err
+	}
+
+	isMember, _ := s.workspaceRepo.IsUserMember(ctx, doc.DocWorkspaceID, userID)
+	if !isMember {
+		return nil, apperror.ErrUnauthorized
+	}
+
+	return &dto.DocumentResponse{
+		ID:       doc.DocID,
+		Title:    doc.DocTitle,
+		Emoji:    doc.DocEmoji,
+		ParentID: *doc.DocParentID,
+	}, nil
 }

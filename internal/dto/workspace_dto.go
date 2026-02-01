@@ -19,3 +19,7 @@ type WorkSpaceResponse struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 }
+
+type GetWorkspaceParams struct {
+	WorkspaceID string `uri:"workspaceId" binding:"required,uuid"`
+}

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -53,4 +54,26 @@ func (c *WorkspaceController) CreateWorkspace(ctx *gin.Context) {
 	}
 
 	httpx.WriteJSON(ctx, http.StatusCreated, resp, "Workspace created successfully")
+}
+
+func (c *WorkspaceController) GetWorkspaceByID(ctx *gin.Context) {
+	var param dto.GetWorkspaceParams
+	if err := ctx.ShouldBindUri(&param); err != nil {
+		fmt.Println("Error binding URI:", err)
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	mapUUID, err := uuid.Parse(param.WorkspaceID)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	resp, err := c.workspaceService.GetWorkspaceByID(ctx.Request.Context(), mapUUID)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrNotFound)
+		return
+	}
+	httpx.WriteJSON(ctx, http.StatusOK, resp, "Workspace found successfully")
 }

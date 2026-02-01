@@ -15,7 +15,8 @@ import (
 
 type DocumentUseCase interface {
 	CreateDoc(ctx context.Context, req dto.CreateDocRequest, userID uuid.UUID) (*dto.DocumentResponse, error)
-	GetDocsByWorkspace(ctx context.Context, workspaceID uuid.UUID, userID uuid.UUID) ([]*dto.DocumentResponse, error)
+	GetWorkspaceDocs(ctx context.Context, workspaceID uuid.UUID, userID uuid.UUID) ([]dto.DocumentResponse, error)
+	GetDocDetail(ctx context.Context, docID uuid.UUID, userID uuid.UUID) (*dto.DocumentResponse, error)
 }
 
 type DocumentController struct {
@@ -71,13 +72,36 @@ func (c *DocumentController) GetWorkspaceDocs(ctx *gin.Context) {
 		return
 	}
 
-	docs, err := c.documentService.GetDocsByWorkspace(ctx.Request.Context(), workspaceID, userID)
+	docs, err := c.documentService.GetWorkspaceDocs(ctx.Request.Context(), workspaceID, userID)
 	if err != nil {
 		_ = ctx.Error(apperror.ErrInternal)
 		return
 	}
 
 	httpx.WriteJSON(ctx, http.StatusOK, docs, "Documents retrieved successfully")
+}
+
+func (c *DocumentController) GetDocDetail(ctx *gin.Context) {
+	userID, err := c.getUserIDFromContext(ctx)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrUnauthorized)
+		return
+	}
+
+	docIDStr := ctx.Param("doc_id")
+	docID, err := uuid.Parse(docIDStr)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	doc, err := c.documentService.GetDocDetail(ctx.Request.Context(), docID, userID)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrInternal)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, doc, "Document detail retrieved successfully")
 }
 
 func (c *DocumentController) getUserIDFromContext(ctx *gin.Context) (uuid.UUID, error) {

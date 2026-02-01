@@ -57,3 +57,15 @@ func (r *documentRepository) GetDocByID(ctx context.Context, docID uuid.UUID) (*
 	err := r.db.WithContext(ctx).First(&doc, "doc_id = ?", docID).Error
 	return &doc, err
 }
+
+func (r *documentRepository) UpdateDoc(ctx context.Context, doc *model.Document) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Save(doc).Error
+	})
+}
+
+func (r *documentRepository) DeleteDoc(ctx context.Context, doc *model.Document) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Delete(doc).Error
+	})
+}

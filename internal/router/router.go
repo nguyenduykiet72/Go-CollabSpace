@@ -11,6 +11,7 @@ import (
 type AppHandlers struct {
 	UserController      *controller.UserController
 	WorkspaceController *controller.WorkspaceController
+	DocumentController  *controller.DocumentController
 }
 
 func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvider) {
@@ -28,6 +29,13 @@ func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvid
 			wp := protectedGroup.Group("/workspace")
 			{
 				wp.POST("", ah.WorkspaceController.CreateWorkspace)
+				wp.GET("/:workspaceId", ah.WorkspaceController.GetWorkspaceByID)
+			}
+			doc := protectedGroup.Group("/document")
+			{
+				doc.POST("", ah.DocumentController.CreateDoc)
+				doc.GET("/doc/:workspaceId", ah.DocumentController.GetWorkspaceDocs)
+				doc.GET("/:docId", ah.DocumentController.GetDocDetail)
 			}
 		}
 	}
