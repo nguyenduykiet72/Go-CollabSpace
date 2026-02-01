@@ -65,7 +65,5 @@ func (r *documentRepository) UpdateDoc(ctx context.Context, doc *model.Document)
 }
 
 func (r *documentRepository) DeleteDoc(ctx context.Context, doc *model.Document) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Delete(doc).Error
-	})
+	return r.db.WithContext(ctx).Delete(doc).Error
 }

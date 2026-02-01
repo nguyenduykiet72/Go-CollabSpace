@@ -14,6 +14,7 @@ import (
 type UserUseCase interface {
 	Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error)
 	Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error)
+	GetAllUsers(ctx context.Context, req dto.PaginationReq) ([]*dto.UserResponse, error)
 }
 
 type UserController struct {
@@ -61,4 +62,20 @@ func (c *UserController) Login(ctx *gin.Context) {
 	}
 
 	httpx.WriteJSON(ctx, http.StatusOK, tokenResp, "Login successful")
+}
+
+func (c *UserController) GetAllUsers(ctx *gin.Context) {
+	var req dto.PaginationReq
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	users, err := c.userService.GetAllUsers(ctx.Request.Context(), req)
+	if err != nil {
+		_ = ctx.Error(err)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, users, "Users retrieved successfully")
 }

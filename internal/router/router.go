@@ -26,6 +26,10 @@ func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvid
 		protectedGroup := v1.Group("/")
 		protectedGroup.Use(middleware.AuthMiddleware(tokenProvider))
 		{
+			user := protectedGroup.Group("/users")
+			{
+				user.GET("", ah.UserController.GetAllUsers)
+			}
 			wp := protectedGroup.Group("/workspace")
 			{
 				wp.POST("", ah.WorkspaceController.CreateWorkspace)

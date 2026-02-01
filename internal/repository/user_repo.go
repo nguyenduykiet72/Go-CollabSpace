@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/dto"
 	"Go-CollabSpace/internal/model"
 )
 
@@ -21,6 +22,20 @@ func NewUserRepository(dbGrm *gorm.DB) *UserRepository {
 
 func (u *UserRepository) CreateUser(ctx context.Context, user *model.User) error {
 	return u.db.WithContext(ctx).Create(user).Error
+}
+
+func (u *UserRepository) GetAllUsers(ctx context.Context, req dto.PaginationReq) ([]*model.User, error) {
+	var users []*model.User
+	err := u.db.WithContext(ctx).
+		Select("user_id", "user_email", "user_full_name", "user_avatar", "user_status", "user_created_at").
+		Limit(req.GetLimit()).
+		Offset(req.GetOffset()).
+		Find(&users).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func (u *UserRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {

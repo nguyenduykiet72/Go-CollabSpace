@@ -18,6 +18,7 @@ type UserRepo interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	CreateUser(ctx context.Context, user *model.User) error
 	CreateSession(ctx context.Context, session *model.Session) error
+	GetAllUsers(ctx context.Context, req dto.PaginationReq) ([]*model.User, error)
 }
 
 type TokenProvider interface {
@@ -103,4 +104,23 @@ func (u *UserService) Login(ctx context.Context, req dto.LoginRequest, userAgent
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+func (u *UserService) GetAllUsers(ctx context.Context, req dto.PaginationReq) ([]*dto.UserResponse, error) {
+	users, err := u.userRepo.GetAllUsers(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var userResponses []*dto.UserResponse
+	for _, user := range users {
+		userResponses = append(userResponses, &dto.UserResponse{
+			ID:        user.UserID,
+			Email:     user.UserEmail,
+			FullName:  user.UserFullName,
+			Avatar:    user.UserAvatar,
+			CreatedAt: user.UserCreatedAt.Format(time.RFC3339),
+		})
+	}
+	return userResponses, nil
 }
