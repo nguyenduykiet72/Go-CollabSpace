@@ -1,0 +1,14 @@
+server:
+  port: 8080
+  mode: "production"
+
+database:
+  host: "localhost"
+  port: 5432
+  username: "postgres"
+  dbname: "CollabSpace"
+  type: "postgres"
+
+jwt:
+  accessTokenDuration: "1h"
+  refreshTokenDuration: "168h"
