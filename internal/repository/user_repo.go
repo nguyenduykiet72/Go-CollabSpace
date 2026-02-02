@@ -13,15 +13,17 @@ import (
 )
 
 type UserRepository struct {
-	db *gorm.DB
+	*transactor
 }
 
 func NewUserRepository(dbGrm *gorm.DB) *UserRepository {
-	return &UserRepository{db: dbGrm}
+	return &UserRepository{
+		transactor: NewTransactor(dbGrm),
+	}
 }
 
 func (u *UserRepository) CreateUser(ctx context.Context, user *model.User) error {
-	return u.db.WithContext(ctx).Create(user).Error
+	return u.getDB(ctx).Create(user).Error
 }
 
 func (u *UserRepository) GetAllUsers(ctx context.Context, req dto.PaginationReq) ([]*model.User, error) {
@@ -61,7 +63,7 @@ func (u *UserRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*model.
 }
 
 func (u *UserRepository) CreateSession(ctx context.Context, session *model.Session) error {
-	return u.db.WithContext(ctx).Create(session).Error
+	return u.getDB(ctx).Create(session).Error
 }
 
 func (u *UserRepository) RevokeSession(ctx context.Context, id uuid.UUID) error {

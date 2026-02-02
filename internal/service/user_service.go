@@ -29,15 +29,20 @@ type TokenProvider interface {
 type UserService struct {
 	userRepo      UserRepo
 	tokenProvider TokenProvider
+	transactor    Transactor
 }
 
-func NewUserService(userRepo UserRepo, tokenProvider TokenProvider) *UserService {
-	return &UserService{userRepo: userRepo, tokenProvider: tokenProvider}
+func NewUserService(userRepo UserRepo, tokenProvider TokenProvider, transactor Transactor) *UserService {
+	return &UserService{userRepo: userRepo, tokenProvider: tokenProvider, transactor: transactor}
 }
 
 func (u *UserService) Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error) {
 	existingUser, err := u.userRepo.GetUserByEmail(ctx, req.Email)
-	if err == nil && existingUser != nil {
+
+	if err != nil && !errors.Is(err, apperror.ErrNotFound) {
+		return nil, err
+	}
+	if existingUser != nil {
 		return nil, apperror.ErrEmailExists
 	}
 
@@ -65,16 +70,18 @@ func (u *UserService) Register(ctx context.Context, req dto.RegisterRequest) (*d
 }
 
 func (u *UserService) Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error) {
+	invalidCredErr := apperror.NewAppError(http.StatusBadRequest, "invalid email or password", "")
+
 	user, err := u.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, apperror.ErrNotFound) {
-			return nil, apperror.NewAppError(http.StatusBadRequest, "invalid email or password", "")
+			return nil, invalidCredErr
 		}
 		return nil, err
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.UserPassword), []byte(req.Password)); err != nil {
-		return nil, apperror.NewAppError(http.StatusBadRequest, "invalid email or password", "")
+		return nil, invalidCredErr
 	}
 
 	accessToken, err := u.tokenProvider.GenerateAccessToken(user.UserID, "Viewer")
@@ -89,15 +96,23 @@ func (u *UserService) Login(ctx context.Context, req dto.LoginRequest, userAgent
 
 	refreshTokenTTL := 7 * 24 * time.Hour
 
-	session := &model.Session{
-		SessUserID:       user.UserID,
-		SessRefreshToken: refreshToken,
-		SessUserAgent:    userAgent,
-		SessExpireAt:     time.Now().Add(refreshTokenTTL),
-	}
+	err = u.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
+		session := &model.Session{
+			SessUserID:       user.UserID,
+			SessRefreshToken: refreshToken,
+			SessUserAgent:    userAgent,
+			SessExpireAt:     time.Now().Add(refreshTokenTTL),
+		}
 
-	if err := u.userRepo.CreateSession(ctx, session); err != nil {
-		return nil, apperror.ErrInternal.WithRootErr(err)
+		if err := u.userRepo.CreateSession(txCtx, session); err != nil {
+			return apperror.ErrInternal.WithRootErr(err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	return &dto.TokenResponse{

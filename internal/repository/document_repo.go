@@ -8,15 +8,15 @@ import (
 	"gorm.io/gorm"
 )
 
-type documentRepository struct {
+type DocumentRepository struct {
 	db *gorm.DB
 }
 
-func NewDocumentRepository(dbGrm *gorm.DB) *documentRepository {
-	return &documentRepository{db: dbGrm}
+func NewDocumentRepository(dbGrm *gorm.DB) *DocumentRepository {
+	return &DocumentRepository{db: dbGrm}
 }
 
-func (r *documentRepository) CreateDoc(ctx context.Context, doc *model.Document) error {
+func (r *DocumentRepository) CreateDoc(ctx context.Context, doc *model.Document) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return err
@@ -31,7 +31,7 @@ func (r *documentRepository) CreateDoc(ctx context.Context, doc *model.Document)
 	})
 }
 
-func (r *documentRepository) GetDocsByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]model.Document, error) {
+func (r *DocumentRepository) GetDocsByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]model.Document, error) {
 	var docs []model.Document
 
 	err := r.db.WithContext(ctx).
@@ -42,7 +42,7 @@ func (r *documentRepository) GetDocsByWorkspace(ctx context.Context, workspaceID
 	return docs, err
 }
 
-func (r *documentRepository) GetWorkspaceDocs(ctx context.Context, workspaceID uuid.UUID, userId uuid.UUID) ([]model.Document, error) {
+func (r *DocumentRepository) GetWorkspaceDocs(ctx context.Context, workspaceID uuid.UUID, userId uuid.UUID) ([]model.Document, error) {
 	var docs []model.Document
 
 	err := r.db.WithContext(ctx).
@@ -52,18 +52,18 @@ func (r *documentRepository) GetWorkspaceDocs(ctx context.Context, workspaceID u
 	return docs, err
 }
 
-func (r *documentRepository) GetDocByID(ctx context.Context, docID uuid.UUID) (*model.Document, error) {
+func (r *DocumentRepository) GetDocByID(ctx context.Context, docID uuid.UUID) (*model.Document, error) {
 	var doc model.Document
 	err := r.db.WithContext(ctx).First(&doc, "doc_id = ?", docID).Error
 	return &doc, err
 }
 
-func (r *documentRepository) UpdateDoc(ctx context.Context, doc *model.Document) error {
+func (r *DocumentRepository) UpdateDoc(ctx context.Context, doc *model.Document) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return tx.Save(doc).Error
 	})
 }
 
-func (r *documentRepository) DeleteDoc(ctx context.Context, doc *model.Document) error {
+func (r *DocumentRepository) DeleteDoc(ctx context.Context, doc *model.Document) error {
 	return r.db.WithContext(ctx).Delete(doc).Error
 }

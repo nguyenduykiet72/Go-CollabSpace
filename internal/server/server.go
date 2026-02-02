@@ -38,10 +38,11 @@ func (s *Server) InitEngine() {
 	r.Use(gin.Recovery(), middleware.ErrorHandler())
 
 	tokenProvider := token.NewJWTProvider(token.ConfigToken(s.cfg.JWT))
+	transactor := repository.NewTransactor(s.db)
 
 	// -- User Module --
 	userRepo := repository.NewUserRepository(s.db)
-	userService := service.NewUserService(userRepo, tokenProvider)
+	userService := service.NewUserService(userRepo, tokenProvider, transactor)
 	userController := controller.NewUserController(userService)
 
 	// -- Workspace Module --
