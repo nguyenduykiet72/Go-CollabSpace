@@ -67,3 +67,11 @@ func (r *DocumentRepository) UpdateDoc(ctx context.Context, doc *model.Document)
 func (r *DocumentRepository) DeleteDoc(ctx context.Context, doc *model.Document) error {
 	return r.db.WithContext(ctx).Delete(doc).Error
 }
+
+func (r *DocumentRepository) AppendYjsUpdate(ctx context.Context, docID uuid.UUID, update []byte) error {
+	return r.db.WithContext(ctx).Exec(
+		`UPDATE tbl_document_states
+		 SET dost_yjs_state = COALESCE(dost_yjs_state, '') || ?
+		 WHERE dost_doc_id = ?
+		`, update, docID).Error
+}

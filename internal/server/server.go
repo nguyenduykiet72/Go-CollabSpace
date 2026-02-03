@@ -13,6 +13,7 @@ import (
 	"Go-CollabSpace/internal/common/token"
 	"Go-CollabSpace/internal/controller"
 	"Go-CollabSpace/internal/middleware"
+	"Go-CollabSpace/internal/realtime"
 	"Go-CollabSpace/internal/repository"
 	"Go-CollabSpace/internal/router"
 	"Go-CollabSpace/internal/service"
@@ -23,6 +24,7 @@ type Server struct {
 	cfg    *config.Config
 	db     *gorm.DB
 	engine *gin.Engine
+	hub    *realtime.Hub
 }
 
 func NewServer(cfg *config.Config, db *gorm.DB) *Server {
@@ -54,6 +56,13 @@ func (s *Server) InitEngine() {
 	documentRepo := repository.NewDocumentRepository(s.db)
 	documentService := service.NewDocumentService(documentRepo, workspaceRepo)
 	documentController := controller.NewDocumentController(documentService)
+
+	s.hub = realtime.NewHub(*documentRepo)
+	go s.hub.Run()
+
+	// -- WebSocket Controller --
+	wsController := controller.NewWsController(s.hub, tokenProvider)
+	r.GET("/ws", wsController.HandleWS)
 
 	handlers := router.AppHandlers{
 		UserController:      userController,

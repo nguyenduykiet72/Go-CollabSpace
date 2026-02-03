@@ -2,8 +2,10 @@ package realtime
 
 import (
 	"Go-CollabSpace/internal/repository"
+	"context"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -20,8 +22,9 @@ type Hub struct {
 	Unregister chan *Client
 	Broadcast  chan *BroadcastMessage
 
-	DocRepo repository.DocumentRepository
-	Mutex   sync.RWMutex
+	saveQueue chan *BroadcastMessage
+	DocRepo   repository.DocumentRepository
+	Mutex     sync.RWMutex
 }
 
 func NewHub(docRepo repository.DocumentRepository) *Hub {
@@ -30,11 +33,28 @@ func NewHub(docRepo repository.DocumentRepository) *Hub {
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
 		Broadcast:  make(chan *BroadcastMessage),
+		saveQueue:  make(chan *BroadcastMessage, 1000),
 		DocRepo:    docRepo,
 	}
 }
 
+func (h *Hub) runSaver() {
+	for msg := range h.saveQueue {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+
+		err := h.DocRepo.AppendYjsUpdate(ctx, msg.DocID, msg.Payload)
+		if err != nil {
+			log.Printf("Error saving Yjs update for doc %s: %v", msg.DocID, err)
+		}
+		cancel()
+	}
+}
+
 func (h *Hub) Run() {
+	go h.runSaver()
+
+	log.Println("Hub is running...")
+
 	for {
 		select {
 		case client := <-h.Register:
@@ -60,7 +80,11 @@ func (h *Hub) Run() {
 			h.Mutex.Unlock()
 
 		case message := <-h.Broadcast:
-			// TODO: Implement save logic
+			select {
+			case h.saveQueue <- message:
+			default:
+				log.Println("Save queue is full, dropping Yjs update")
+			}
 			h.Mutex.RLock()
 			clients := h.Rooms[message.DocID]
 			for client := range clients {
