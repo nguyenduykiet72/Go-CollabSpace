@@ -515,6 +515,6 @@ Currently a **monolithic architecture**, but designed to easily evolve into **mi
 
 ## Support & Contact
 
-Email: elliotnguyen@gmail.com
+Email: elliotnguyen909@gmail.com
 
 
