@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"Go-CollabSpace/config"
+	"Go-CollabSpace/internal/common/infrastructure"
 	"Go-CollabSpace/internal/common/token"
 	"Go-CollabSpace/internal/controller"
 	"Go-CollabSpace/internal/middleware"
@@ -46,7 +47,12 @@ func (s *Server) InitEngine() {
 	workspaceRepo := repository.NewWorkspaceRepository(s.db)
 	documentRepo := repository.NewDocumentRepository(s.db)
 
-	s.hub = realtime.NewHub(documentRepo)
+	redisClient, err := infrastructure.NewRedisClient(s.cfg.Redis)
+	if err != nil {
+		logger.Log.Fatal("Failed to connect to Redis", zap.Error(err))
+	}
+
+	s.hub = realtime.NewHub(documentRepo, redisClient)
 	go s.hub.Run()
 	wsController := controller.NewWsController(s.hub, tokenProvider)
 	r.GET("/ws/*any", wsController.HandleWS)

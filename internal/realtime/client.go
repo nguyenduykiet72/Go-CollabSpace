@@ -71,9 +71,9 @@ func (c *Client) ReadLoop() {
 			// Pure relay: forward every binary message to all other clients in the same doc room.
 			// y-websocket clients handle the Yjs protocol (SyncStep1/2, Updates, Awareness) themselves.
 			c.Hub.Broadcast <- &BroadcastMessage{
-				DocID:   c.DocID,
-				Payload: msg,
-				Sender:  c,
+				DocID:    c.DocID,
+				Payload:  msg,
+				SenderId: c.UserID,
 			}
 		}
 	}

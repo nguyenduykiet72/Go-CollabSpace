@@ -1,7 +1,10 @@
 package realtime
 
 import (
+	"Go-CollabSpace/internal/common/infrastructure"
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -17,7 +20,9 @@ type DocRepoForHub interface {
 type BroadcastMessage struct {
 	DocID   uuid.UUID
 	Payload []byte
-	Sender  *Client
+	// Sender   *Client
+	SenderId uuid.UUID `json:"sender_id"`
+	SaveToDB bool      `json:"-"`
 }
 
 type Hub struct {
@@ -26,31 +31,26 @@ type Hub struct {
 	Unregister chan *Client
 	Broadcast  chan *BroadcastMessage
 
-	saveQueue chan *BroadcastMessage
-	DocRepo   DocRepoForHub
-	Mutex     sync.RWMutex
+	saveQueue   chan *BroadcastMessage
+	DocRepo     DocRepoForHub
+	Mutex       sync.RWMutex
+	RedisClient *infrastructure.RedisClient
 }
 
-func NewHub(docRepo DocRepoForHub) *Hub {
+func NewHub(docRepo DocRepoForHub, redisClient *infrastructure.RedisClient) *Hub {
 	return &Hub{
-		Rooms:      make(map[uuid.UUID]map[*Client]bool),
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
-		Broadcast:  make(chan *BroadcastMessage),
-		saveQueue:  make(chan *BroadcastMessage, 1000),
-		DocRepo:    docRepo,
+		Rooms:       make(map[uuid.UUID]map[*Client]bool),
+		Register:    make(chan *Client),
+		Unregister:  make(chan *Client),
+		Broadcast:   make(chan *BroadcastMessage),
+		saveQueue:   make(chan *BroadcastMessage, 1000),
+		DocRepo:     docRepo,
+		RedisClient: redisClient,
 	}
 }
 
 func (h *Hub) runSaver() {
 	for msg := range h.saveQueue {
-		// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-
-		// err := h.DocRepo.AppendYjsUpdate(ctx, msg.DocID, msg.Payload)
-		// if err != nil {
-		// 	log.Printf("Error saving Yjs update for doc %s: %v", msg.DocID, err)
-		// }
-		// cancel()
 		msgType, payload := ParseYjsMessage(msg.Payload)
 
 		if msgType == MessageSync {
@@ -71,6 +71,44 @@ func (h *Hub) runSaver() {
 	}
 }
 
+func (h *Hub) subscribeToRedisChannel(docID uuid.UUID) {
+	ctx := context.Background()
+	channelName := fmt.Sprintf("ws:doc:%s", docID.String())
+
+	pubsub := h.RedisClient.Client.Subscribe(ctx, channelName)
+
+	go func() {
+		defer pubsub.Close()
+		ch := pubsub.Channel()
+
+		for msg := range ch {
+			var boardcastMsg BroadcastMessage
+			if err := json.Unmarshal([]byte(msg.Payload), &boardcastMsg); err != nil {
+				log.Printf("Error unmarshaling Redis message: %v", err)
+				continue
+			}
+
+			h.broadcastToLocalClients(&boardcastMsg)
+		}
+	}()
+}
+
+func (h *Hub) broadcastToLocalClients(msg *BroadcastMessage) {
+	h.Mutex.RLock()
+	clients := h.Rooms[msg.DocID]
+	for client := range clients {
+		if client.UserID != msg.SenderId {
+			select {
+			case client.Send <- msg.Payload:
+			default:
+				close(client.Send)
+				delete(clients, client)
+			}
+		}
+	}
+	h.Mutex.RUnlock()
+}
+
 func (h *Hub) Run() {
 	go h.runSaver()
 
@@ -82,37 +120,32 @@ func (h *Hub) Run() {
 			h.Mutex.Lock()
 			if h.Rooms[client.DocID] == nil {
 				h.Rooms[client.DocID] = make(map[*Client]bool)
+				h.subscribeToRedisChannel(client.DocID)
 			}
 			h.Rooms[client.DocID][client] = true
 			h.Mutex.Unlock()
 			log.Printf("Client %s joined doc %s", client.UserID, client.DocID)
 
 		case message := <-h.Broadcast:
-			// Save sync updates to DB for persistence
-			select {
-			case h.saveQueue <- message:
-			default:
-				log.Println("Save queue is full, dropping message")
-			}
-
-			h.Mutex.RLock()
-			clients := h.Rooms[message.DocID]
-			count := 0
-
-			for client := range clients {
-				if client != message.Sender {
-					select {
-					case client.Send <- message.Payload:
-						count++
-					default:
-						close(client.Send)
-						delete(clients, client)
-					}
+			if message.SaveToDB {
+				select {
+				case h.saveQueue <- message:
+				default:
+					log.Println("Save queue full, dropping save request")
 				}
 			}
-			h.Mutex.RUnlock()
-			if count > 0 {
-				log.Printf("Relayed message to %d clients for doc %s", count, message.DocID)
+
+			payload, err := json.Marshal(message)
+			if err != nil {
+				log.Printf("Error marshaling broadcast message: %v", err)
+				continue
+			}
+
+			channelName := fmt.Sprintf("ws:doc:%s", message.DocID.String())
+
+			err = h.RedisClient.Client.Publish(context.Background(), channelName, payload).Err()
+			if err != nil {
+				log.Printf("Error publishing to Redis channel: %v", err)
 			}
 
 		case client := <-h.Unregister:

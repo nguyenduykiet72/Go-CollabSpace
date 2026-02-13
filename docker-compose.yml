@@ -19,6 +19,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  redis:
+    image: redis:8.0
+    container_name: collabspace-redis
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - collabspace-network
+    volumes:
+      - redis_data:/data
+
+networks:
+  collabspace-network:
+    driver: bridge
 
 volumes:
   postgres_data:
+  redis_data:

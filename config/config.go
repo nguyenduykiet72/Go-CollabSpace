@@ -14,6 +14,7 @@ type Config struct {
 	Server   ServerConfig `yaml:"server"`
 	Database DBConfig     `yaml:"database"`
 	JWT      JWTConfig    `yaml:"jwt"`
+	Redis    RedisConfig  `yaml:"redis"`
 }
 
 type ServerConfig struct {
@@ -35,6 +36,12 @@ type JWTConfig struct {
 	RefreshTokenSecret   string        `yaml:"refreshTokenSecret" env:"JWT_REFRESH_SECRET" validate:"required"`
 	AccessTokenDuration  time.Duration `yaml:"accessTokenDuration" env:"JWT_ACCESS_DURATION" env-default:"1h"`
 	RefreshTokenDuration time.Duration `yaml:"refreshTokenDuration" env:"JWT_REFRESH_DURATION" env-default:"168h"` // 7 days
+}
+
+type RedisConfig struct {
+	Host     string `yaml:"host" env:"REDIS_HOST" validate:"required"`
+	Port     int    `yaml:"port" env:"REDIS_PORT" validate:"required"`
+	Password string `yaml:"password" env:"REDIS_PASSWORD" validate:"required"`
 }
 
 var (
