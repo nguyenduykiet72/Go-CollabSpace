@@ -34,6 +34,7 @@ func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvid
 			{
 				wp.POST("", ah.WorkspaceController.CreateWorkspace)
 				wp.GET("/:workspaceId", ah.WorkspaceController.GetWorkspaceByID)
+				wp.POST("/:workspaceId/members", ah.WorkspaceController.AddMembers)
 			}
 			doc := protectedGroup.Group("/document")
 			{

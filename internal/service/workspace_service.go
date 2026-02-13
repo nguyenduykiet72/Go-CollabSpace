@@ -1,9 +1,11 @@
 package service
 
 import (
+	"Go-CollabSpace/internal/common/apperror"
 	"Go-CollabSpace/internal/dto"
 	"Go-CollabSpace/internal/model"
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 )
@@ -15,6 +17,8 @@ type WorkspaceRepo interface {
 	GetUserWorkspaces(ctx context.Context, userID uuid.UUID) ([]*model.Workspace, error)
 	IsUserMember(ctx context.Context, workspaceID, userID uuid.UUID) (bool, error)
 	GetWorkspaceWithMembers(ctx context.Context, id uuid.UUID) (*model.Workspace, error)
+	GetRoleByName(ctx context.Context, name string) (*model.Role, error)
+	AddMembers(ctx context.Context, members []model.WorkspaceMember) (int, error)
 }
 
 type WorkspaceService struct {
@@ -59,4 +63,35 @@ func (s *WorkspaceService) GetWorkspaceByID(ctx context.Context, id uuid.UUID) (
 		CreatedAt: workspace.WpCreatedAt,
 		UpdatedAt: workspace.WpUpdatedAt,
 	}, nil
+}
+
+func (s *WorkspaceService) AddMembers(ctx context.Context, workspaceID uuid.UUID, req dto.AddMembersRequest, callerID uuid.UUID) (int, error) {
+	// Check caller is a member of the workspace
+	isMember, _ := s.workspaceRepo.IsUserMember(ctx, workspaceID, callerID)
+	if !isMember {
+		return 0, apperror.ErrUnauthorized
+	}
+
+	// Get the role
+	role, err := s.workspaceRepo.GetRoleByName(ctx, req.Role)
+	if err != nil {
+		return 0, err
+	}
+
+	// Build member models
+	members := make([]model.WorkspaceMember, 0, len(req.UserIDs))
+	for _, userID := range req.UserIDs {
+		members = append(members, model.WorkspaceMember{
+			WpmWorkspaceID: workspaceID,
+			WpmUserID:      userID,
+			WpmRoleID:      role.RoleID,
+		})
+	}
+
+	added, err := s.workspaceRepo.AddMembers(ctx, members)
+	if err != nil {
+		return 0, fmt.Errorf("failed to add members: %w", err)
+	}
+
+	return added, nil
 }

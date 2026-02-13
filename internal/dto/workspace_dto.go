@@ -23,3 +23,15 @@ type WorkSpaceResponse struct {
 type GetWorkspaceParams struct {
 	WorkspaceID string `uri:"workspaceId" binding:"required,uuid"`
 }
+
+type AddMembersRequest struct {
+	UserIDs []uuid.UUID `json:"userIds" binding:"required,min=1,dive,required"`
+	Role    string      `json:"role" binding:"required,oneof=Admin Editor Viewer"`
+}
+
+type WorkspaceMemberResponse struct {
+	ID       uuid.UUID `json:"id"`
+	UserID   uuid.UUID `json:"userId"`
+	Role     string    `json:"role"`
+	JoinedAt string    `json:"joinedAt"`
+}

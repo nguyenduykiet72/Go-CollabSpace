@@ -13,4 +13,6 @@ var (
 	ErrEmailExists       = NewAppError(http.StatusConflict, "Email already exists", "EMAIL_EXISTS")
 	ErrUserBlocked       = NewAppError(http.StatusForbidden, "User is blocked", "USER_BLOCKED")
 	ErrSlugExists        = NewAppError(http.StatusConflict, "Slug already exists", "SLUG_EXISTS")
+	ErrMemberExists      = NewAppError(http.StatusConflict, "User is already a member of this workspace", "MEMBER_EXISTS")
+	ErrUserNotFound      = NewAppError(http.StatusNotFound, "User not found", "USER_NOT_FOUND")
 )

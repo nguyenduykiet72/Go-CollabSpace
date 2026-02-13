@@ -127,3 +127,25 @@ func (w *workspaceRepository) GetRoleByName(ctx context.Context, name string) (*
 	}
 	return &role, nil
 }
+
+func (w *workspaceRepository) AddMembers(ctx context.Context, members []model.WorkspaceMember) (int, error) {
+	added := 0
+	err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, m := range members {
+			var count int64
+			tx.Model(&model.WorkspaceMember{}).
+				Where("wpm_workspace_id = ? AND wpm_user_id = ?", m.WpmWorkspaceID, m.WpmUserID).
+				Count(&count)
+			if count > 0 {
+				continue // Skip existing members
+			}
+
+			if err := tx.Create(&m).Error; err != nil {
+				return err
+			}
+			added++
+		}
+		return nil
+	})
+	return added, err
+}

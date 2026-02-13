@@ -17,6 +17,7 @@ import (
 type WorkspaceUseCase interface {
 	CreateWorkspace(ctx context.Context, req dto.CreateWorkspaceRequest, userID uuid.UUID) (*dto.WorkSpaceResponse, error)
 	GetWorkspaceByID(ctx context.Context, id uuid.UUID) (*dto.WorkSpaceResponse, error)
+	AddMembers(ctx context.Context, workspaceID uuid.UUID, req dto.AddMembersRequest, callerID uuid.UUID) (int, error)
 }
 
 type WorkspaceController struct {
@@ -76,4 +77,40 @@ func (c *WorkspaceController) GetWorkspaceByID(ctx *gin.Context) {
 		return
 	}
 	httpx.WriteJSON(ctx, http.StatusOK, resp, "Workspace found successfully")
+}
+
+func (c *WorkspaceController) AddMembers(ctx *gin.Context) {
+	payload, exists := ctx.Get("authorization_payload")
+	if !exists {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	userClaims, ok := payload.(*token.UserClaims)
+	if !ok {
+		ctx.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	workspaceIDStr := ctx.Param("workspaceId")
+	workspaceID, err := uuid.Parse(workspaceIDStr)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+	fmt.Print("Workspace ID:", workspaceID)
+	var req dto.AddMembersRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		fmt.Println("Error binding JSON:", err)
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+	fmt.Print("something here......")
+	added, err := c.workspaceService.AddMembers(ctx.Request.Context(), workspaceID, req, userClaims.UserID)
+	if err != nil {
+		_ = ctx.Error(err)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, gin.H{"added": added}, fmt.Sprintf("%d member(s) added successfully", added))
 }

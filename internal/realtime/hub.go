@@ -1,7 +1,6 @@
 package realtime
 
 import (
-	"Go-CollabSpace/internal/repository"
 	"context"
 	"log"
 	"sync"
@@ -10,10 +9,15 @@ import (
 	"github.com/google/uuid"
 )
 
+type DocRepoForHub interface {
+	AppendYjsUpdate(ctx context.Context, docID uuid.UUID, update []byte) error
+	GetYjsState(ctx context.Context, docID uuid.UUID) ([]byte, error)
+}
+
 type BroadcastMessage struct {
 	DocID   uuid.UUID
 	Payload []byte
-	Sender  uuid.UUID
+	Sender  *Client
 }
 
 type Hub struct {
@@ -23,11 +27,11 @@ type Hub struct {
 	Broadcast  chan *BroadcastMessage
 
 	saveQueue chan *BroadcastMessage
-	DocRepo   repository.DocumentRepository
+	DocRepo   DocRepoForHub
 	Mutex     sync.RWMutex
 }
 
-func NewHub(docRepo repository.DocumentRepository) *Hub {
+func NewHub(docRepo DocRepoForHub) *Hub {
 	return &Hub{
 		Rooms:      make(map[uuid.UUID]map[*Client]bool),
 		Register:   make(chan *Client),
@@ -40,13 +44,30 @@ func NewHub(docRepo repository.DocumentRepository) *Hub {
 
 func (h *Hub) runSaver() {
 	for msg := range h.saveQueue {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		// ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 
-		err := h.DocRepo.AppendYjsUpdate(ctx, msg.DocID, msg.Payload)
-		if err != nil {
-			log.Printf("Error saving Yjs update for doc %s: %v", msg.DocID, err)
+		// err := h.DocRepo.AppendYjsUpdate(ctx, msg.DocID, msg.Payload)
+		// if err != nil {
+		// 	log.Printf("Error saving Yjs update for doc %s: %v", msg.DocID, err)
+		// }
+		// cancel()
+		msgType, payload := ParseYjsMessage(msg.Payload)
+
+		if msgType == MessageSync {
+			syncType, data := ParseYjsSyncMessage(payload)
+
+			if syncType == SyncUpdate {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+
+				err := h.DocRepo.AppendYjsUpdate(ctx, msg.DocID, data)
+				if err != nil {
+					log.Printf("Error saving update: %v", err)
+				} else {
+					log.Printf("Saved update for doc %s (%d bytes)", msg.DocID, len(data))
+				}
+				cancel()
+			}
 		}
-		cancel()
 	}
 }
 
@@ -66,6 +87,34 @@ func (h *Hub) Run() {
 			h.Mutex.Unlock()
 			log.Printf("Client %s joined doc %s", client.UserID, client.DocID)
 
+		case message := <-h.Broadcast:
+			// Save sync updates to DB for persistence
+			select {
+			case h.saveQueue <- message:
+			default:
+				log.Println("Save queue is full, dropping message")
+			}
+
+			h.Mutex.RLock()
+			clients := h.Rooms[message.DocID]
+			count := 0
+
+			for client := range clients {
+				if client != message.Sender {
+					select {
+					case client.Send <- message.Payload:
+						count++
+					default:
+						close(client.Send)
+						delete(clients, client)
+					}
+				}
+			}
+			h.Mutex.RUnlock()
+			if count > 0 {
+				log.Printf("Relayed message to %d clients for doc %s", count, message.DocID)
+			}
+
 		case client := <-h.Unregister:
 			h.Mutex.Lock()
 			if clients, ok := h.Rooms[client.DocID]; ok {
@@ -78,26 +127,6 @@ func (h *Hub) Run() {
 				}
 			}
 			h.Mutex.Unlock()
-
-		case message := <-h.Broadcast:
-			select {
-			case h.saveQueue <- message:
-			default:
-				log.Println("Save queue is full, dropping Yjs update")
-			}
-			h.Mutex.RLock()
-			clients := h.Rooms[message.DocID]
-			for client := range clients {
-				if client.UserID != message.Sender {
-					select {
-					case client.Send <- message.Payload:
-					default:
-						close(client.Send)
-						delete(clients, client)
-					}
-				}
-			}
-			h.Mutex.RUnlock()
 		}
 	}
 }

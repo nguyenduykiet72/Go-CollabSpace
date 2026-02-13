@@ -37,32 +37,33 @@ func NewServer(cfg *config.Config, db *gorm.DB) *Server {
 func (s *Server) InitEngine() {
 	gin.SetMode(resolveGinMode(s.cfg.Server.Mode))
 	r := gin.New()
-	r.Use(gin.Recovery(), middleware.ErrorHandler())
 
 	tokenProvider := token.NewJWTProvider(token.ConfigToken(s.cfg.JWT))
 	transactor := repository.NewTransactor(s.db)
 
-	// -- User Module --
+	// -- Repositories --
 	userRepo := repository.NewUserRepository(s.db)
+	workspaceRepo := repository.NewWorkspaceRepository(s.db)
+	documentRepo := repository.NewDocumentRepository(s.db)
+
+	s.hub = realtime.NewHub(documentRepo)
+	go s.hub.Run()
+	wsController := controller.NewWsController(s.hub, tokenProvider)
+	r.GET("/ws/*any", wsController.HandleWS)
+
+	r.Use(gin.Recovery(), middleware.ErrorHandler())
+
+	// -- User Module --
 	userService := service.NewUserService(userRepo, tokenProvider, transactor)
 	userController := controller.NewUserController(userService)
 
 	// -- Workspace Module --
-	workspaceRepo := repository.NewWorkspaceRepository(s.db)
 	workspaceService := service.NewWorkspaceService(workspaceRepo)
 	workspaceController := controller.NewWorkspaceController(workspaceService)
 
 	// -- Document Module --
-	documentRepo := repository.NewDocumentRepository(s.db)
 	documentService := service.NewDocumentService(documentRepo, workspaceRepo)
 	documentController := controller.NewDocumentController(documentService)
-
-	s.hub = realtime.NewHub(*documentRepo)
-	go s.hub.Run()
-
-	// -- WebSocket Controller --
-	wsController := controller.NewWsController(s.hub, tokenProvider)
-	r.GET("/ws", wsController.HandleWS)
 
 	handlers := router.AppHandlers{
 		UserController:      userController,

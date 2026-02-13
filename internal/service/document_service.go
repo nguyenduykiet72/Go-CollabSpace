@@ -43,11 +43,16 @@ func (s *DocumentService) CreateDoc(ctx context.Context, req dto.CreateDocReques
 		return nil, err
 	}
 
+	var parentID uuid.UUID
+	if doc.DocParentID != nil {
+		parentID = *doc.DocParentID
+	}
+
 	return &dto.DocumentResponse{
 		ID:       doc.DocID,
 		Title:    doc.DocTitle,
 		Emoji:    doc.DocEmoji,
-		ParentID: *doc.DocParentID,
+		ParentID: parentID,
 	}, nil
 }
 

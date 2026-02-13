@@ -3,13 +3,24 @@ package controller
 import (
 	"Go-CollabSpace/internal/common/token"
 	"Go-CollabSpace/internal/realtime"
-	"Go-CollabSpace/pkg/httpx"
-	"context"
+	"log"
+	"net/http"
 
-	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
+
+// upgrader hijacks the connection BEFORE writing the 101 response,
+// completely bypassing Gin's ResponseWriter. This avoids the
+// "gin: response already written" error from coder/websocket.
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins (tighten in production)
+	},
+}
 
 type WsController struct {
 	Hub           *realtime.Hub
@@ -24,48 +35,59 @@ func NewWsController(hub *realtime.Hub, tokenProvider token.ITokenProvider) *WsC
 }
 
 func (c *WsController) HandleWS(ctx *gin.Context) {
-	tokenStr := ctx.Query("token")
+	// Custom panic recovery — this route has NO Gin Recovery middleware
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic in WebSocket handler: %v", r)
+		}
+	}()
 
-	if tokenStr == "" {
-		httpx.WriteJSON(ctx, 401, nil, "Unauthorized: missing token")
+	if c.Hub == nil {
+		log.Println("CRITICAL ERROR: c.Hub is NIL inside HandleWS!")
+		ctx.JSON(500, gin.H{"error": "Internal Server Error: Hub missing"})
 		return
 	}
+
+	// --- Validate BEFORE upgrading to WebSocket ---
+	tokenStr := ctx.Query("token")
+	if tokenStr == "" {
+		ctx.JSON(401, gin.H{"error": "Unauthorized: missing token"})
+		return
+	}
+
 	claims, err := c.TokenProvider.ValidateAccessToken(tokenStr)
 	if err != nil {
-		httpx.WriteJSON(ctx, 401, nil, "Unauthorized: invalid token")
+		ctx.JSON(401, gin.H{"error": "Unauthorized: invalid token"})
 		return
 	}
 
 	docIDStr := ctx.Query("doc_id")
 	docID, err := uuid.Parse(docIDStr)
 	if err != nil {
-		httpx.WriteJSON(ctx, 400, nil, "Bad Request: invalid document ID")
+		ctx.JSON(400, gin.H{"error": "Bad Request: invalid document ID"})
 		return
 	}
 
-	conn, err := websocket.Accept(ctx.Writer, ctx.Request, &websocket.AcceptOptions{
-		OriginPatterns: []string{"*"},
-	})
-
+	// --- Upgrade to WebSocket ---
+	// gorilla/websocket hijacks BEFORE writing headers, bypassing Gin entirely.
+	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
+		log.Printf("WebSocket Upgrade failed: %v", err)
 		return
 	}
 
-	clientCtx, cancel := context.WithCancel(context.Background())
+	log.Printf("WebSocket connected: user=%s doc=%s", claims.UserID, docID)
 
 	client := &realtime.Client{
-		Hub:     c.Hub,
-		Conn:    conn,
-		UserID:  claims.UserID,
-		DocID:   docID,
-		Send:    make(chan []byte, 256),
-		Context: clientCtx,
-		Cancel:  cancel,
+		Hub:    c.Hub,
+		Conn:   conn,
+		UserID: claims.UserID,
+		DocID:  docID,
+		Send:   make(chan []byte, 256),
 	}
 
 	client.Hub.Register <- client
 
 	go client.WriteLoop()
-	go client.ReadLoop()
-
+	client.ReadLoop()
 }

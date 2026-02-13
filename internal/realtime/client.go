@@ -1,43 +1,48 @@
 package realtime
 
 import (
-	"context"
+	"log"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+)
+
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
+	maxMessageSize = 1048576 // 1 MB
 )
 
 type Client struct {
-	Hub     *Hub
-	Conn    *websocket.Conn
-	UserID  uuid.UUID
-	DocID   uuid.UUID
-	Send    chan []byte // Outgoing message channel
-	Context context.Context
-	Cancel  context.CancelFunc
+	Hub    *Hub
+	Conn   *websocket.Conn
+	UserID uuid.UUID
+	DocID  uuid.UUID
+	Send   chan []byte // Outgoing message channel
 }
 
 func (c *Client) WriteLoop() {
-	defer func() {
-		c.Conn.Close(websocket.StatusNormalClosure, "") // Close the connection when the write loop ends
-	}()
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case msg, ok := <-c.Send:
 			if !ok {
-				return // Channel closed, exit the write loop
+				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
 			}
-			ctx, cancel := context.WithTimeout(c.Context, 5*time.Second)
-			err := c.Conn.Write(ctx, websocket.MessageBinary, msg)
-			cancel()
-
-			if err != nil {
-				return // Error writing to connection, exit the write loop
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.BinaryMessage, msg); err != nil {
+				return
 			}
-		case <-c.Context.Done():
-			return // Context cancelled, exit the write loop
+		case <-ticker.C:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -45,23 +50,39 @@ func (c *Client) WriteLoop() {
 func (c *Client) ReadLoop() {
 	defer func() {
 		c.Hub.Unregister <- c
-		c.Conn.Close(websocket.StatusNormalClosure, "")
-		c.Cancel()
+		c.Conn.Close()
 	}()
 
-	c.Conn.SetReadLimit(1048576) // 1 MB
+	c.Conn.SetReadLimit(maxMessageSize)
+	_ = c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.Conn.SetPongHandler(func(string) error {
+		_ = c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
 
 	for {
-		typ, msg, err := c.Conn.Read(c.Context)
+		msgType, msg, err := c.Conn.ReadMessage()
 		if err != nil {
 			break
 		}
-		if typ == websocket.MessageBinary {
+		if msgType == websocket.BinaryMessage {
+			log.Printf("Client %s raw msg (%d bytes): first bytes = %v", c.UserID, len(msg), firstN(msg, 6))
+
+			// Pure relay: forward every binary message to all other clients in the same doc room.
+			// y-websocket clients handle the Yjs protocol (SyncStep1/2, Updates, Awareness) themselves.
 			c.Hub.Broadcast <- &BroadcastMessage{
 				DocID:   c.DocID,
 				Payload: msg,
-				Sender:  c.UserID,
+				Sender:  c,
 			}
 		}
 	}
+}
+
+// firstN returns the first n bytes of b, or all of b if len(b) < n.
+func firstN(b []byte, n int) []byte {
+	if len(b) < n {
+		return b
+	}
+	return b[:n]
 }

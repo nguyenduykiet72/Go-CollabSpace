@@ -71,7 +71,25 @@ func (r *DocumentRepository) DeleteDoc(ctx context.Context, doc *model.Document)
 func (r *DocumentRepository) AppendYjsUpdate(ctx context.Context, docID uuid.UUID, update []byte) error {
 	return r.db.WithContext(ctx).Exec(
 		`UPDATE tbl_document_states
-		 SET dost_yjs_state = COALESCE(dost_yjs_state, '') || ?
-		 WHERE dost_doc_id = ?
+		 SET dost_yjs_state = COALESCE(dost_yjs_state, '\x'::bytea) || $1
+		 WHERE dost_doc_id = $2
 		`, update, docID).Error
+}
+
+func (r *DocumentRepository) GetYjsState(ctx context.Context, docID uuid.UUID) ([]byte, error) {
+	var state model.DocumentState
+	err := r.db.WithContext(ctx).
+		Select("dost_yjs_state").
+		Where("dost_doc_id = ?", docID).
+		First(&state).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if state.DostYjsState == nil {
+		return []byte{}, nil
+	}
+
+	return state.DostYjsState, nil
 }
