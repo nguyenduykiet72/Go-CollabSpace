@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"Go-CollabSpace/internal/common/infrastructure"
+	"Go-CollabSpace/internal/telemetry"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -125,6 +126,7 @@ func (h *Hub) Run() {
 			h.Rooms[client.DocID][client] = true
 			h.Mutex.Unlock()
 			log.Printf("Client %s joined doc %s", client.UserID, client.DocID)
+			telemetry.ActiveConnections.WithLabelValues(client.DocID.String()).Inc()
 
 		case message := <-h.Broadcast:
 			if message.SaveToDB {
@@ -147,6 +149,7 @@ func (h *Hub) Run() {
 			if err != nil {
 				log.Printf("Error publishing to Redis channel: %v", err)
 			}
+			telemetry.ProcessedMessages.WithLabelValues("update").Inc()
 
 		case client := <-h.Unregister:
 			h.Mutex.Lock()
@@ -160,6 +163,7 @@ func (h *Hub) Run() {
 				}
 			}
 			h.Mutex.Unlock()
+			telemetry.ActiveConnections.WithLabelValues(client.DocID.String()).Dec()
 		}
 	}
 }

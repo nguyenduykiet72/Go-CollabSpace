@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -49,7 +50,7 @@ func (s *Server) InitEngine() {
 
 	redisClient, err := infrastructure.NewRedisClient(s.cfg.Redis)
 	if err != nil {
-		logger.Log.Fatal("Failed to connect to Redis", zap.Error(err))
+		logger.Log.Info("Failed to connect to Redis", zap.Error(err))
 	}
 
 	s.hub = realtime.NewHub(documentRepo, redisClient)
@@ -70,6 +71,8 @@ func (s *Server) InitEngine() {
 	// -- Document Module --
 	documentService := service.NewDocumentService(documentRepo, workspaceRepo)
 	documentController := controller.NewDocumentController(documentService)
+
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	handlers := router.AppHandlers{
 		UserController:      userController,

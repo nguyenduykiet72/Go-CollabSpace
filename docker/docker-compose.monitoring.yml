@@ -1,0 +1,51 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: collabspace-prometheus
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - collabspace-monitoring
+
+  loki:
+    image: grafana/loki:latest
+    container_name: collabspace-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - collabspace-monitoring
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: collabspace-promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/promtail-config.yaml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - collabspace-monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: collabspace-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=123456789
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - collabspace-monitoring
+
+networks:
+  collabspace-monitoring:
+    driver: bridge
