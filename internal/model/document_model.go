@@ -36,6 +36,15 @@ type DocEmbedding struct {
 	EmbTokenCount int       `gorm:"column:emb_token_count"`
 }
 
+type FlatDocNode struct {
+	DocID    uuid.UUID  `db:"doc_id"`
+	ParentID *uuid.UUID `db:"doc_parent_id"`
+	Title    string     `db:"doc_title"`
+	Emoji    string     `db:"doc_emoji"`
+	Status   string     `db:"doc_status"`
+	Depth    int        `db:"depth"`
+}
+
 func (Document) TableName() string      { return "tbl_documents" }
 func (DocumentState) TableName() string { return "tbl_document_states" }
 func (DocEmbedding) TableName() string  { return "tbl_doc_embeddings" }

@@ -17,6 +17,8 @@ type DocumentUseCase interface {
 	CreateDoc(ctx context.Context, req dto.CreateDocRequest, userID uuid.UUID) (*dto.DocumentResponse, error)
 	GetWorkspaceDocs(ctx context.Context, workspaceID uuid.UUID, userID uuid.UUID) ([]dto.DocumentResponse, error)
 	GetDocDetail(ctx context.Context, docID uuid.UUID, userID uuid.UUID) (*dto.DocumentResponse, error)
+	GetDocTree(ctx context.Context, workspaceID uuid.UUID, userID uuid.UUID) ([]dto.DocTreeItem, error)
+	MoveDoc(ctx context.Context, docID uuid.UUID, req dto.MoveDocRequest, userID uuid.UUID) error
 }
 
 type DocumentController struct {
@@ -117,4 +119,45 @@ func (c *DocumentController) getUserIDFromContext(ctx *gin.Context) (uuid.UUID, 
 	}
 
 	return claims.UserID, nil
+}
+
+func (c *DocumentController) GetDocTree(ctx *gin.Context) {
+	workspaceID, err := uuid.Parse(ctx.Param("workspaceId"))
+	if err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	userID := ctx.MustGet("userID").(uuid.UUID) // jwt middleware
+
+	tree, err := c.documentService.GetDocTree(ctx.Request.Context(), workspaceID, userID)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, tree, "Document tree retrieved successfully")
+}
+
+func (c *DocumentController) MoveDoc(ctx *gin.Context) {
+	docID, err := uuid.Parse(ctx.Param("docId"))
+	if err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	var req dto.MoveDocRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	userID := ctx.MustGet("userID").(uuid.UUID) // jwt middleware
+
+	if err := c.documentService.MoveDoc(ctx.Request.Context(), docID, req, userID); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, nil, "Document moved successfully")
 }

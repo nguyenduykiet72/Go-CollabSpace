@@ -82,7 +82,6 @@ func (r *DocumentRepository) GetYjsState(ctx context.Context, docID uuid.UUID) (
 		Select("dost_yjs_state").
 		Where("dost_doc_id = ?", docID).
 		First(&state).Error
-
 	if err != nil {
 		return nil, err
 	}
@@ -92,4 +91,63 @@ func (r *DocumentRepository) GetYjsState(ctx context.Context, docID uuid.UUID) (
 	}
 
 	return state.DostYjsState, nil
+}
+
+func (r *DocumentRepository) GetDocTreeFlat(ctx context.Context, workspaceID uuid.UUID) ([]model.FlatDocNode, error) {
+	query := `
+	   WITH RECURSIVE doc_tree as (
+	 	 SELECT doc_id, doc_parent_id, doc_title, doc_emoji, doc_status, 0 AS depth
+		 FROM tbl_documents 
+		 WHERE doc_workspace_id = ?   
+		 	AND doc_parent_id IS NULL
+		 	AND doc_deleted_at IS NULL
+
+		 UNION ALL
+
+		 SELECT d.doc_id, d.doc_parent_id, d.doc_title, d.doc_emoji, d.doc_status, dt.depth + 1
+		 FROM tbl_documents d
+		 INNER JOIN doc_tree dt ON d.doc_parent_id = dt.doc_id
+		 WHERE d.doc_deleted_at IS NULL
+	   )
+		SELECT * FROM doc_tree ORDER BY depth, doc_id`
+
+	var nodes []model.FlatDocNode
+	if err := r.db.WithContext(ctx).Raw(query, workspaceID).Scan(&nodes).Error; err != nil {
+		return nil, err
+	}
+
+	return nodes, nil
+}
+
+func (r *DocumentRepository) IsDescendant(ctx context.Context, docID, candidateID uuid.UUID) (bool, error) {
+	query := `
+		WITH RECURSIVE ancestors AS (
+			SELECT doc_id
+			FROM tbl_documents
+			WHERE doc_id = ?
+				AND doc_deleted_at IS NULL
+			UNION ALL
+
+			SELECT d.doc_id
+			FROM tbl_documents d
+			INNER JOIN subtree s ON d.doc_parent_id = s.doc_id
+			WHERE d.doc_deleted_at IS NULL
+		)
+		SELECT EXISTS (SELECT 1 FROM subtree WHERE doc_id = ?)
+	`
+
+	var exists bool
+
+	if err := r.db.WithContext(ctx).Raw(query, docID, candidateID).Scan(&exists).Error; err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func (r *DocumentRepository) UpdateDocParent(ctx context.Context, docID uuid.UUID, newParenID *uuid.UUID) error {
+	return r.db.WithContext(ctx).
+		Model(&model.Document{}).
+		Where("doc_id = ? AND doc_deleted_at IS NULL", docID).
+		Update("doc_parent_id", newParenID).Error
 }
