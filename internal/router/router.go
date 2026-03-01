@@ -41,6 +41,8 @@ func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvid
 				doc.POST("", ah.DocumentController.CreateDoc)
 				doc.GET("/doc/:workspaceId", ah.DocumentController.GetWorkspaceDocs)
 				doc.GET("/:docId", ah.DocumentController.GetDocDetail)
+				doc.GET("/tree/:worksapceId", ah.DocumentController.GetDocTree)
+				doc.PATCH("/:docId/move", ah.DocumentController.MoveDoc)
 			}
 		}
 	}

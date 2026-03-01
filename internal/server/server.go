@@ -1,16 +1,6 @@
 package server
 
 import (
-	"fmt"
-	"net/http"
-	"time"
-
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
-	"gorm.io/gorm"
-
 	"Go-CollabSpace/config"
 	"Go-CollabSpace/internal/common/infrastructure"
 	"Go-CollabSpace/internal/common/token"
@@ -21,6 +11,15 @@ import (
 	"Go-CollabSpace/internal/router"
 	"Go-CollabSpace/internal/service"
 	"Go-CollabSpace/pkg/logger"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type Server struct {
