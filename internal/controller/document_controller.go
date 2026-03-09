@@ -19,6 +19,7 @@ type DocumentUseCase interface {
 	GetDocDetail(ctx context.Context, docID uuid.UUID, userID uuid.UUID) (*dto.DocumentResponse, error)
 	GetDocTree(ctx context.Context, workspaceID uuid.UUID, userID uuid.UUID) ([]dto.DocTreeItem, error)
 	MoveDoc(ctx context.Context, docID uuid.UUID, req dto.MoveDocRequest, userID uuid.UUID) error
+	SaveDocSnapshot(ctx context.Context, docID uuid.UUID, req dto.SaveSnapshotRequest) error
 }
 
 type DocumentController struct {
@@ -83,7 +84,7 @@ func (c *DocumentController) GetDocDetail(ctx *gin.Context) {
 		return
 	}
 
-	docIDStr := ctx.Param("doc_id")
+	docIDStr := ctx.Param("docId")
 	docID, err := uuid.Parse(docIDStr)
 	if err != nil {
 		_ = ctx.Error(apperror.ErrBadRequest)
@@ -152,4 +153,27 @@ func (c *DocumentController) MoveDoc(ctx *gin.Context) {
 	}
 
 	httpx.WriteJSON(ctx, http.StatusOK, nil, "Document moved successfully")
+}
+
+func (c *DocumentController) SaveDocSnapshot(ctx *gin.Context) {
+	docIDStr := ctx.Param("docId")
+	docID, err := uuid.Parse(docIDStr)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	var req dto.SaveSnapshotRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	err = c.documentService.SaveDocSnapshot(ctx.Request.Context(), docID, req)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrInternal)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, nil, "Document snapshot saved successfully")
 }

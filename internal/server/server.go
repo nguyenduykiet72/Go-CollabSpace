@@ -10,6 +10,7 @@ import (
 	"Go-CollabSpace/internal/repository"
 	"Go-CollabSpace/internal/router"
 	"Go-CollabSpace/internal/service"
+	"Go-CollabSpace/internal/worker"
 	"Go-CollabSpace/pkg/logger"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -50,8 +52,23 @@ func (s *Server) InitEngine() {
 
 	redisClient, err := infrastructure.NewRedisClient(s.cfg.Redis)
 	if err != nil {
-		logger.Log.Info("Failed to connect to Redis", zap.Error(err))
+		logger.Log.Fatal("Failed to connect to Redis", zap.Error(err))
 	}
+
+	redisOpts := asynq.RedisClientOpt{
+		Addr:     fmt.Sprintf("%s:%d", s.cfg.Redis.Host, s.cfg.Redis.Port),
+		Password: s.cfg.Redis.Password,
+		DB:       0,
+	}
+
+	taskDistributor := worker.NewRedisTaskDistributor(redisOpts)
+	taskProcessor := worker.NewRedisTaskProcessor(redisOpts, s.db)
+	go func() {
+		logger.Log.Info("Starting task distributor")
+		if err := taskProcessor.Start(); err != nil {
+			logger.Log.Fatal("Failed to start task processor", zap.Error(err))
+		}
+	}()
 
 	s.hub = realtime.NewHub(documentRepo, redisClient)
 	go s.hub.Run()
@@ -82,7 +99,7 @@ func (s *Server) InitEngine() {
 	workspaceController := controller.NewWorkspaceController(workspaceService)
 
 	// -- Document Module --
-	documentService := service.NewDocumentService(documentRepo, workspaceRepo)
+	documentService := service.NewDocumentService(documentRepo, workspaceRepo, taskDistributor)
 	documentController := controller.NewDocumentController(documentService)
 
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
