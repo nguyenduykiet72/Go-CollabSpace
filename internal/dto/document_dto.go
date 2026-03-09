@@ -17,7 +17,7 @@ type DocumentResponse struct {
 	ID        uuid.UUID  `json:"id"`
 	Title     string     `json:"title"`
 	Emoji     string     `json:"emoji"`
-	ParentID  *uuid.UUID `json:"parentId"`  // pointer: nil = root document
+	ParentID  *uuid.UUID `json:"parentId"` // pointer: nil = root document
 	AuthorID  uuid.UUID  `json:"authorId"`
 	CreatedAt time.Time  `json:"createdAt"`
 }
@@ -39,4 +39,8 @@ type UpdateDocRequest struct {
 
 type MoveDocRequest struct {
 	NewParentID *uuid.UUID `json:"newParentId"` // Nullable for moving to root
+}
+
+type SaveSnapshotRequest struct {
+	PlainText string `json:"plainText" binding:"required"`
 }

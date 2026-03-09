@@ -4,6 +4,7 @@ import (
 	"Go-CollabSpace/internal/common/apperror"
 	"Go-CollabSpace/internal/dto"
 	"Go-CollabSpace/internal/model"
+	"Go-CollabSpace/internal/worker"
 	"context"
 
 	"github.com/google/uuid"
@@ -19,12 +20,17 @@ type DocumentRepo interface {
 }
 
 type DocumentService struct {
-	documentRepo  DocumentRepo
-	workspaceRepo WorkspaceRepo
+	documentRepo    DocumentRepo
+	workspaceRepo   WorkspaceRepo
+	taskDistributor worker.TaskDistributor
 }
 
-func NewDocumentService(documentRepo DocumentRepo, workspaceRepo WorkspaceRepo) *DocumentService {
-	return &DocumentService{documentRepo: documentRepo, workspaceRepo: workspaceRepo}
+func NewDocumentService(documentRepo DocumentRepo, workspaceRepo WorkspaceRepo, distributor worker.TaskDistributor) *DocumentService {
+	return &DocumentService{
+		documentRepo:    documentRepo,
+		workspaceRepo:   workspaceRepo,
+		taskDistributor: distributor,
+	}
 }
 
 func (s *DocumentService) CreateDoc(ctx context.Context, req dto.CreateDocRequest, userID uuid.UUID) (*dto.DocumentResponse, error) {
@@ -184,4 +190,18 @@ func (s *DocumentService) MoveDoc(ctx context.Context, docID uuid.UUID, req dto.
 	}
 
 	return s.documentRepo.UpdateDocParent(ctx, docID, req.NewParentID)
+}
+
+func (s *DocumentService) SaveDocSnapshot(ctx context.Context, docID uuid.UUID, req dto.SaveSnapshotRequest) error {
+	payload := &worker.PayloadUpdateSearchIndex{
+		DocID:     docID,
+		PlainText: req.PlainText,
+	}
+
+	err := s.taskDistributor.DistributeTaskUpdateSearchIndex(ctx, payload)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
