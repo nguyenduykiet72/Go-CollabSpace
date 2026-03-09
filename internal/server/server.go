@@ -55,7 +55,7 @@ func (s *Server) InitEngine() {
 
 	s.hub = realtime.NewHub(documentRepo, redisClient)
 	go s.hub.Run()
-	wsController := controller.NewWsController(s.hub, tokenProvider)
+	wsController := controller.NewWsController(s.hub, tokenProvider, s.db)
 	r.GET("/ws/*any", wsController.HandleWS)
 
 	corsConfig := cors.Config{
@@ -69,8 +69,12 @@ func (s *Server) InitEngine() {
 	r.Use(cors.New(corsConfig))
 	r.Use(gin.Recovery(), middleware.ErrorHandler())
 
+	// -- Auth Module --
+	authService := service.NewAuthService(userRepo, tokenProvider, transactor)
+	authController := controller.NewAuthController(authService)
+
 	// -- User Module --
-	userService := service.NewUserService(userRepo, tokenProvider, transactor)
+	userService := service.NewUserService(userRepo, transactor)
 	userController := controller.NewUserController(userService)
 
 	// -- Workspace Module --
@@ -84,12 +88,13 @@ func (s *Server) InitEngine() {
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	handlers := router.AppHandlers{
+		AuthController:      authController,
 		UserController:      userController,
 		WorkspaceController: workspaceController,
 		DocumentController:  documentController,
 	}
 
-	router.SetUpRoutes(r, handlers, tokenProvider)
+	router.SetUpRoutes(r, handlers, tokenProvider, s.db)
 
 	s.engine = r
 }
