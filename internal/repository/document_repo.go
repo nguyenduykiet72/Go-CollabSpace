@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
 )
 
@@ -150,4 +151,36 @@ func (r *DocumentRepository) UpdateDocParent(ctx context.Context, docID uuid.UUI
 		Model(&model.Document{}).
 		Where("doc_id = ? AND doc_deleted_at IS NULL", docID).
 		Update("doc_parent_id", newParenID).Error
+}
+
+func (r *DocumentRepository) Search(ctx context.Context, keyword string,
+	queryEmbedding []float32, workspaceID uuid.UUID, limit int) ([]model.DocumentChunk, error) {
+	var chunks []model.DocumentChunk
+	vector := pgvector.NewVector(queryEmbedding)
+
+	query := `
+		WITH dock_text_search AS (
+			SELECT dock_id, ROW_NUMBER() OVER(ORDER BY ts_rank(dock_text_search,plainto_tsquery(?)) DESC) AS rank
+			FROM tbl_document_chunks dc
+			INNER JOIN tbl_documents d ON dc.dock_doc_id = d.doc_id
+			WHERE d.doc_workspace_id = ? AND dock_text_search @@ plainto_tsquery(?) 
+			LIMIT 50
+		),
+		semantic_search AS (
+			SELECT dock_id, ROW_NUMBER() OVER(ORDER BY dock_embedding <=> ?) AS rank
+			FROM tbl_document_chunks dc 
+			INNER JOIN tbl_documents d ON dc.dock_doc_id = d.doc_id
+			WHERE d.doc_workspace_id = ?
+			LIMIT 50
+		)
+		SELECT dc.*, COALESCE(1.0 / (60 + ts.rank), 0.0) + COALESCE(1.0 / (60 + ss.rank), 0.0) as rrf_score
+		FROM tbl_document_chunks dc
+		LEFT JOIN dock_text_search ts ON ts.dock_id = dc.dock_id
+		LEFT JOIN semantic_search ss ON ss.dock_id = dc.dock_id
+		WHERE ts.dock_id IS NOT NULL OR ss.chunk_id IS NOT NULL
+		ORDER BY rrf_score DESC
+		LIMIT ?
+	`
+	err := r.db.WithContext(ctx).Raw(query, keyword, workspaceID, keyword, vector, workspaceID, limit).Scan(&chunks).Error
+	return chunks, err
 }

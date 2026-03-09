@@ -36,14 +36,6 @@ func (c *DocumentController) CreateDoc(ctx *gin.Context) {
 		return
 	}
 
-	// workspaceIDStr := ctx.Param("workspace_id")
-	// workspaceID, err := uuid.Parse(workspaceIDStr)
-	// if err != nil {
-	// 	fmt.Println("Error parsing workspace ID:", err, workspaceID, workspaceIDStr)
-	// 	_ = ctx.Error(apperror.ErrBadRequest)
-	// 	return
-	// }
-
 	var req dto.CreateDocRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		_ = ctx.Error(apperror.ErrBadRequest)
@@ -68,7 +60,7 @@ func (c *DocumentController) GetWorkspaceDocs(ctx *gin.Context) {
 		return
 	}
 
-	workspaceIDStr := ctx.Param("workspace_id")
+	workspaceIDStr := ctx.Param("workspaceId")
 	workspaceID, err := uuid.Parse(workspaceIDStr)
 	if err != nil {
 		_ = ctx.Error(apperror.ErrBadRequest)

@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"Go-CollabSpace/internal/constant"
 	"log"
 	"time"
 
@@ -20,6 +21,7 @@ type Client struct {
 	Conn   *websocket.Conn
 	UserID uuid.UUID
 	DocID  uuid.UUID
+	RoleID uint
 	Send   chan []byte // Outgoing message channel
 }
 
@@ -65,9 +67,13 @@ func (c *Client) ReadLoop() {
 		if err != nil {
 			break
 		}
-		if msgType == websocket.BinaryMessage {
-			log.Printf("Client %s raw msg (%d bytes): first bytes = %v", c.UserID, len(msg), firstN(msg, 6))
+		if msgType == websocket.BinaryMessage && len(msg) > 0 {
+			yjsMsgType := msg[0]
 
+			if c.RoleID == constant.RoleViewer && yjsMsgType == 0 {
+				log.Printf("SECURITY ALERT: Viewer %s attempted to send a Sync Update to Doc %s. Packet dropped.", c.UserID, c.DocID)
+				continue
+			}
 			// Pure relay: forward every binary message to all other clients in the same doc room.
 			// y-websocket clients handle the Yjs protocol (SyncStep1/2, Updates, Awareness) themselves.
 			c.Hub.Broadcast <- &BroadcastMessage{
