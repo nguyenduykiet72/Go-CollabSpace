@@ -12,6 +12,7 @@ import (
 	"Go-CollabSpace/internal/service"
 	"Go-CollabSpace/internal/worker"
 	"Go-CollabSpace/pkg/logger"
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -86,6 +87,15 @@ func (s *Server) InitEngine() {
 	r.Use(cors.New(corsConfig))
 	r.Use(gin.Recovery(), middleware.ErrorHandler())
 
+	ctx := context.Background()
+	s3Client, err := infrastructure.NewS3Client(ctx, s.cfg.AWS)
+	if err != nil {
+		logger.Log.Fatal("Failed to connect to AWS S3 ", zap.Error(err))
+	}
+
+	storageService := service.NewStorageService(s.db, s3Client, s.cfg.AWS.BucketName)
+	storageController := controller.NewStorageController(storageService)
+
 	// -- Auth Module --
 	authService := service.NewAuthService(userRepo, tokenProvider, transactor)
 	authController := controller.NewAuthController(authService)
@@ -109,6 +119,7 @@ func (s *Server) InitEngine() {
 		UserController:      userController,
 		WorkspaceController: workspaceController,
 		DocumentController:  documentController,
+		StorageController:   storageController,
 	}
 
 	router.SetUpRoutes(r, handlers, tokenProvider, s.db)

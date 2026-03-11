@@ -7,4 +7,5 @@ type AppHandlers struct {
 	UserController      *controller.UserController
 	WorkspaceController *controller.WorkspaceController
 	DocumentController  *controller.DocumentController
+	StorageController   *controller.StorageController
 }
