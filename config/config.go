@@ -15,6 +15,7 @@ type Config struct {
 	Database DBConfig     `yaml:"database"`
 	JWT      JWTConfig    `yaml:"jwt"`
 	Redis    RedisConfig  `yaml:"redis"`
+	AWS      AWSConfig    `yaml:"aws"`
 }
 
 type ServerConfig struct {
@@ -42,6 +43,13 @@ type RedisConfig struct {
 	Host     string `yaml:"host" env:"REDIS_HOST" validate:"required"`
 	Port     int    `yaml:"port" env:"REDIS_PORT" validate:"required"`
 	Password string `yaml:"password" env:"REDIS_PASSWORD" validate:"required"`
+}
+
+type AWSConfig struct {
+	Region          string `yaml:"region" env:"AWS_REGION" validate:"required"`
+	AccessKeyID     string `yaml:"accessKeyId" env:"AWS_ACCESS_KEY_ID" validate:"required"`
+	SecretAccessKey string `yaml:"secretAccessKey" env:"AWS_SECRET_ACCESS_KEY" validate:"required"`
+	BucketName      string `yaml:"bucketName" env:"AWS_BUCKET_NAME" validate:"required"`
 }
 
 var (
