@@ -14,6 +14,8 @@ import (
 type AuthUseCase interface {
 	Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error)
 	Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error)
+	ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error
+	ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error
 }
 
 type AuthController struct {
@@ -24,7 +26,7 @@ func NewAuthController(userUseCase AuthUseCase) *AuthController {
 	return &AuthController{authService: userUseCase}
 }
 
-func (c *AuthController) Register(ctx *gin.Context) {
+func (a *AuthController) Register(ctx *gin.Context) {
 	var req dto.RegisterRequest
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -32,7 +34,7 @@ func (c *AuthController) Register(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := c.authService.Register(ctx.Request.Context(), req)
+	resp, err := a.authService.Register(ctx.Request.Context(), req)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
@@ -41,7 +43,7 @@ func (c *AuthController) Register(ctx *gin.Context) {
 	httpx.WriteJSON(ctx, http.StatusCreated, resp, "User created successfully")
 }
 
-func (c *AuthController) Login(ctx *gin.Context) {
+func (a *AuthController) Login(ctx *gin.Context) {
 	var req dto.LoginRequest
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -54,11 +56,43 @@ func (c *AuthController) Login(ctx *gin.Context) {
 		userAgent = "unknown"
 	}
 
-	tokenResp, err := c.authService.Login(ctx.Request.Context(), req, userAgent)
+	tokenResp, err := a.authService.Login(ctx.Request.Context(), req, userAgent)
 	if err != nil {
 		_ = ctx.Error(err)
 		return
 	}
 
 	httpx.WriteJSON(ctx, http.StatusOK, tokenResp, "Login successful")
+}
+
+func (a *AuthController) ForgotPassword(ctx *gin.Context) {
+	var req dto.ForgotPasswordRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	err := a.authService.ForgotPassword(ctx.Request.Context(), req)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrInternal)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, nil, "If your email is registered, you will receive a password reset link shortly.")
+}
+
+func (a *AuthController) ResetPassword(ctx *gin.Context) {
+	var req dto.ResetPasswordRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	err := a.authService.ResetPassword(ctx.Request.Context(), req)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrInternal)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, nil, "Password has been reset successfully.")
 }

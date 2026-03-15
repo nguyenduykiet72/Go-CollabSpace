@@ -11,11 +11,13 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig `yaml:"server"`
-	Database DBConfig     `yaml:"database"`
-	JWT      JWTConfig    `yaml:"jwt"`
-	Redis    RedisConfig  `yaml:"redis"`
-	AWS      AWSConfig    `yaml:"aws"`
+	Server      ServerConfig      `yaml:"server"`
+	Database    DBConfig          `yaml:"database"`
+	JWT         JWTConfig         `yaml:"jwt"`
+	Redis       RedisConfig       `yaml:"redis"`
+	AWS         AWSConfig         `yaml:"aws"`
+	ResendEmail ResendEmailConfig `yaml:"resendEmail"`
+	//SMTP        SMTPConfig        `yaml:"smtp"`
 }
 
 type ServerConfig struct {
@@ -51,6 +53,19 @@ type AWSConfig struct {
 	SecretAccessKey string `yaml:"secretAccessKey" env:"AWS_SECRET_ACCESS_KEY" validate:"required"`
 	BucketName      string `yaml:"bucketName" env:"AWS_BUCKET_NAME" validate:"required"`
 }
+
+type ResendEmailConfig struct {
+	ResendAPIKey string `yaml:"resendApiKey" env:"RESEND_API_KEY" validate:"required"`
+	FromEmail    string `yaml:"fromEmail" env:"FROM_EMAIL" validate:"required"`
+}
+
+//type SMTPConfig struct {
+//	Host     string `yaml:"host" env:"SMTP_HOST" env-default:"smtp.gmail.com"`
+//	Port     int    `yaml:"port" env:"SMTP_PORT" env-default:"587"`
+//	Username string `yaml:"username" env:"SMTP_USERNAME" validate:"required"`
+//	Password string `yaml:"password" env:"SMTP_PASSWORD" validate:"required"` // Dùng App Password nếu là Gmail
+//	From     string `yaml:"from" env:"SMTP_FROM" validate:"required"`
+//}
 
 var (
 	cfg  *Config

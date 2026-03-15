@@ -69,3 +69,20 @@ func (u *UserRepository) CreateSession(ctx context.Context, session *model.Sessi
 func (u *UserRepository) RevokeSession(ctx context.Context, id uuid.UUID) error {
 	return u.db.WithContext(ctx).Model(&model.Session{}).Where("sess_id = ?", id).Update("sess_is_blocked", true).Error
 }
+
+func (u *UserRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUID, newHashedPassword string) error {
+	result := u.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("user_id = ?", userID).
+		Update("user_password", newHashedPassword)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return apperror.ErrNotFound
+	}
+
+	return nil
+}

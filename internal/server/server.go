@@ -47,6 +47,7 @@ func (s *Server) InitEngine() {
 	transactor := repository.NewTransactor(s.db)
 
 	// -- Repositories --
+	authRepo := repository.NewAuthRepository(s.db)
 	userRepo := repository.NewUserRepository(s.db)
 	workspaceRepo := repository.NewWorkspaceRepository(s.db)
 	documentRepo := repository.NewDocumentRepository(s.db)
@@ -62,8 +63,18 @@ func (s *Server) InitEngine() {
 		DB:       0,
 	}
 
+	//emailSender := infrastructure.NewSMTPEmailSender(
+	//	s.cfg.SMTP.Host,
+	//	s.cfg.SMTP.Port,
+	//	s.cfg.SMTP.Username,
+	//	s.cfg.SMTP.Password,
+	//	s.cfg.SMTP.From,
+	//)
+
+	emailSender := infrastructure.NewResendEmailSender(s.cfg.ResendEmail.ResendAPIKey, s.cfg.ResendEmail.FromEmail)
+
 	taskDistributor := worker.NewRedisTaskDistributor(redisOpts)
-	taskProcessor := worker.NewRedisTaskProcessor(redisOpts, s.db)
+	taskProcessor := worker.NewRedisTaskProcessor(redisOpts, s.db, emailSender)
 	go func() {
 		logger.Log.Info("Starting task distributor")
 		if err := taskProcessor.Start(); err != nil {
@@ -97,7 +108,7 @@ func (s *Server) InitEngine() {
 	storageController := controller.NewStorageController(storageService)
 
 	// -- Auth Module --
-	authService := service.NewAuthService(userRepo, tokenProvider, transactor)
+	authService := service.NewAuthService(authRepo, userRepo, tokenProvider, transactor)
 	authController := controller.NewAuthController(authService)
 
 	// -- User Module --
