@@ -107,8 +107,19 @@ func (s *Server) InitEngine() {
 	storageService := service.NewStorageService(s.db, s3Client, s.cfg.AWS.BucketName)
 	storageController := controller.NewStorageController(storageService)
 
+	googleProvider := infrastructure.NewGoogleOAuth(
+		s.cfg.OAuthGoogleConfig.ClientID,
+		s.cfg.OAuthGoogleConfig.ClientSecret,
+		s.cfg.OAuthGoogleConfig.RedirectURL,
+	)
+
+	oauthProviders := map[string]infrastructure.OAuthProvider{
+		"google": googleProvider,
+		// Future providers can be added here like "github": githubProvider, etc.
+	}
+
 	// -- Auth Module --
-	authService := service.NewAuthService(authRepo, userRepo, tokenProvider, transactor)
+	authService := service.NewAuthService(authRepo, userRepo, tokenProvider, transactor, taskDistributor, oauthProviders)
 	authController := controller.NewAuthController(authService)
 
 	// -- User Module --

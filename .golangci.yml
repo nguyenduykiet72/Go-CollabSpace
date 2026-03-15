@@ -1,4 +1,8 @@
-linters:
+run:
+  timeout: 5m
+
+formatters:
+  disable-all: true
   enable:
     - gofmt
     - goimports

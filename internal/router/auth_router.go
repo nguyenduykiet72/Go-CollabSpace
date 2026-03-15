@@ -10,4 +10,5 @@ func registerAuthRoutes(rg *gin.RouterGroup, ah AppHandlers) {
 	au.POST("/login", ah.AuthController.Login)
 	au.POST("/forgot-password", ah.AuthController.ForgotPassword)
 	au.POST("/reset-password", ah.AuthController.ResetPassword)
+	au.POST("/oauth/:provider", ah.AuthController.LoginWithSocial)
 }

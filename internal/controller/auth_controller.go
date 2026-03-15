@@ -16,6 +16,7 @@ type AuthUseCase interface {
 	Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error)
 	ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error
 	ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error
+	LoginWithSocial(ctx context.Context, providerName string, code string, userAgent string) (*dto.TokenResponse, error)
 }
 
 type AuthController struct {
@@ -95,4 +96,22 @@ func (a *AuthController) ResetPassword(ctx *gin.Context) {
 	}
 
 	httpx.WriteJSON(ctx, http.StatusOK, nil, "Password has been reset successfully.")
+}
+
+func (a *AuthController) LoginWithSocial(ctx *gin.Context) {
+	providerName := ctx.Param("provider")
+
+	var req dto.SocialLoginReq
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	result, err := a.authService.LoginWithSocial(ctx.Request.Context(), providerName, req.Code, ctx.GetHeader("User-Agent"))
+	if err != nil {
+		_ = ctx.Error(err)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, result, "Login successful")
 }

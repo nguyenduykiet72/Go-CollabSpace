@@ -18,6 +18,7 @@ type Config struct {
 	AWS         AWSConfig         `yaml:"aws"`
 	ResendEmail ResendEmailConfig `yaml:"resendEmail"`
 	//SMTP        SMTPConfig        `yaml:"smtp"`
+	OAuthGoogleConfig OAuthGoogleConfig `yaml:"oauthGoogle"`
 }
 
 type ServerConfig struct {
@@ -32,6 +33,12 @@ type DBConfig struct {
 	Password string `yaml:"password" env:"DB_PASSWORD" validate:"required"`
 	DBName   string `yaml:"dbname" env:"DB_NAME" validate:"required"`
 	Type     string `yaml:"type" env:"DB_TYPE" env-default:"postgres" validate:"required,oneof=postgres mysql"`
+}
+
+type OAuthGoogleConfig struct {
+	ClientID     string `yaml:"client_id" env:"GOOGLE_CLIENT_ID" validate:"required"`
+	ClientSecret string `yaml:"client_secret" env:"GOOGLE_CLIENT_SECRET" validate:"required"`
+	RedirectURL  string `yaml:"redirect_url" env:"GOOGLE_REDIRECT_URL" validate:"required"`
 }
 
 type JWTConfig struct {

@@ -86,3 +86,26 @@ func (u *UserRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUI
 
 	return nil
 }
+
+func (u *UserRepository) UpdateSocialAuth(ctx context.Context, userID uuid.UUID, provider string, socialID string, avatar string) error {
+	updates := map[string]interface{}{
+		"auth_provider": provider,
+		"social_id":     socialID,
+		"user_avatar":   avatar,
+	}
+
+	result := u.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("user_id = ?", userID).
+		Updates(updates)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return apperror.ErrNotFound
+	}
+
+	return nil
+}

@@ -34,3 +34,7 @@ type ResetPasswordRequest struct {
 	RawToken    string `json:"token" binding:"required"`
 	NewPassword string `json:"newPassword" binding:"required,min=6"`
 }
+
+type SocialLoginReq struct {
+	Code string `json:"code" binding:"required"`
+}
