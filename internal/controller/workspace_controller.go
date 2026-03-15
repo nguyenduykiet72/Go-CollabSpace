@@ -43,7 +43,6 @@ func (c *WorkspaceController) CreateWorkspace(ctx *gin.Context) {
 
 	var req dto.CreateWorkspaceRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		// ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		_ = ctx.Error(apperror.ErrBadRequest)
 		return
 	}

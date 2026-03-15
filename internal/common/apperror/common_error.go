@@ -20,4 +20,5 @@ var (
 	ErrCannotMoveToSelf    = NewAppError(http.StatusBadRequest, "Cannot move a document into itself", "CANNOT_MOVE_TO_SELF")
 	ErrUnsupportedFileType = NewAppError(http.StatusBadRequest, "Unsupported file type", "UNSUPPORTED_FILE_TYPE")
 	ErrFileTooLarge        = NewAppError(http.StatusBadRequest, "File size exceeds the limit (5MB)", "FILE_TOO_LARGE")
+	ErrInvalidToken        = NewAppError(http.StatusUnauthorized, "Invalid token", "INVALID_TOKEN")
 )
