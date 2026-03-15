@@ -2,6 +2,7 @@ package service
 
 import (
 	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/common/infrastructure"
 	"Go-CollabSpace/internal/dto"
 	"Go-CollabSpace/internal/model"
 	"Go-CollabSpace/internal/worker"
@@ -26,6 +27,7 @@ type UserAuthRepo interface {
 	CreateUser(ctx context.Context, user *model.User) error
 	CreateSession(ctx context.Context, session *model.Session) error
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, newHashedPassword string) error
+	UpdateSocialAuth(ctx context.Context, userID uuid.UUID, provider string, socialID string, avatar string) error
 }
 
 type TokenProvider interface {
@@ -39,14 +41,22 @@ type AuthService struct {
 	tokenProvider   TokenProvider
 	transactor      Transactor
 	taskDistributor worker.TaskDistributor
+	oauthProviders  map[string]infrastructure.OAuthProvider
 }
 
-func NewAuthService(authRepo AuthRepo, userRepo UserAuthRepo, tokenProvider TokenProvider, transactor Transactor) *AuthService {
-	return &AuthService{authRepo: authRepo, userRepo: userRepo, tokenProvider: tokenProvider, transactor: transactor}
+func NewAuthService(authRepo AuthRepo, userRepo UserAuthRepo, tokenProvider TokenProvider, transactor Transactor, taskDistributor worker.TaskDistributor, providers map[string]infrastructure.OAuthProvider) *AuthService {
+	return &AuthService{
+		authRepo:        authRepo,
+		userRepo:        userRepo,
+		tokenProvider:   tokenProvider,
+		transactor:      transactor,
+		taskDistributor: taskDistributor,
+		oauthProviders:  providers,
+	}
 }
 
-func (u *AuthService) Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error) {
-	existingUser, err := u.userRepo.GetUserByEmail(ctx, req.Email)
+func (a *AuthService) Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error) {
+	existingUser, err := a.userRepo.GetUserByEmail(ctx, req.Email)
 
 	if err != nil && !errors.Is(err, apperror.ErrNotFound) {
 		return nil, err
@@ -60,14 +70,16 @@ func (u *AuthService) Register(ctx context.Context, req dto.RegisterRequest) (*d
 		return nil, err
 	}
 
+	hashedPwdStr := string(hashPassword)
+
 	newUser := &model.User{
 		UserEmail:    req.Email,
-		UserPassword: string(hashPassword),
+		UserPassword: &hashedPwdStr,
 		UserFullName: req.FullName,
 		UserStatus:   "active",
 	}
 
-	if err := u.userRepo.CreateUser(ctx, newUser); err != nil {
+	if err := a.userRepo.CreateUser(ctx, newUser); err != nil {
 		return nil, err
 	}
 
@@ -78,10 +90,10 @@ func (u *AuthService) Register(ctx context.Context, req dto.RegisterRequest) (*d
 	}, nil
 }
 
-func (u *AuthService) Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error) {
+func (a *AuthService) Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error) {
 	invalidCredErr := apperror.NewAppError(http.StatusBadRequest, "invalid email or password", "")
 
-	user, err := u.userRepo.GetUserByEmail(ctx, req.Email)
+	user, err := a.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, apperror.ErrNotFound) {
 			return nil, invalidCredErr
@@ -89,23 +101,23 @@ func (u *AuthService) Login(ctx context.Context, req dto.LoginRequest, userAgent
 		return nil, err
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.UserPassword), []byte(req.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(*user.UserPassword), []byte(req.Password)); err != nil {
 		return nil, invalidCredErr
 	}
 
-	accessToken, err := u.tokenProvider.GenerateAccessToken(user.UserID, "Viewer")
+	accessToken, err := a.tokenProvider.GenerateAccessToken(user.UserID, "Viewer")
 	if err != nil {
 		return nil, apperror.ErrInternal.WithRootErr(err)
 	}
 
-	refreshToken, err := u.tokenProvider.GenerateRefreshToken()
+	refreshToken, err := a.tokenProvider.GenerateRefreshToken()
 	if err != nil {
 		return nil, apperror.ErrInternal.WithRootErr(err)
 	}
 
 	refreshTokenTTL := 7 * 24 * time.Hour
 
-	err = u.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
+	err = a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
 		session := &model.Session{
 			SessUserID:       user.UserID,
 			SessRefreshToken: refreshToken,
@@ -113,7 +125,7 @@ func (u *AuthService) Login(ctx context.Context, req dto.LoginRequest, userAgent
 			SessExpireAt:     time.Now().Add(refreshTokenTTL),
 		}
 
-		if err := u.userRepo.CreateSession(txCtx, session); err != nil {
+		if err := a.userRepo.CreateSession(txCtx, session); err != nil {
 			return apperror.ErrInternal.WithRootErr(err)
 		}
 
@@ -130,8 +142,8 @@ func (u *AuthService) Login(ctx context.Context, req dto.LoginRequest, userAgent
 	}, nil
 }
 
-func (u *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPasswordRequest) error {
-	user, err := u.userRepo.GetUserByEmail(ctx, dto.Email)
+func (a *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPasswordRequest) error {
+	user, err := a.userRepo.GetUserByEmail(ctx, dto.Email)
 	if err != nil {
 		if errors.Is(err, apperror.ErrNotFound) {
 			return nil // Don't reveal if email exists
@@ -148,7 +160,7 @@ func (u *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPassword
 		PassExpireAt:  time.Now().Add(15 * time.Minute),
 	}
 
-	if err := u.authRepo.CreatePasswordReset(ctx, resetData); err != nil {
+	if err := a.authRepo.CreatePasswordReset(ctx, resetData); err != nil {
 		return err
 	}
 
@@ -157,15 +169,15 @@ func (u *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPassword
 		ResetToken: rawToken,
 	}
 
-	_ = u.taskDistributor.DistributeTaskSendResetEmail(ctx, payload)
+	_ = a.taskDistributor.DistributeTaskSendResetEmail(ctx, payload)
 
 	return nil
 }
 
-func (u *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error {
+func (a *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error {
 	hashedToken := hash.HashToken(req.RawToken)
 
-	resetData, err := u.authRepo.FindValidPasswordReset(ctx, hashedToken)
+	resetData, err := a.authRepo.FindValidPasswordReset(ctx, hashedToken)
 	if err != nil {
 		if errors.Is(err, apperror.ErrNotFound) {
 			return apperror.ErrInvalidToken
@@ -173,17 +185,96 @@ func (u *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordRe
 		return err
 	}
 
-	return u.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
+	return a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
 		hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 
-		if err := u.userRepo.UpdateUserPassword(txCtx, resetData.PassUserID, string(hashedPwd)); err != nil {
+		if err := a.userRepo.UpdateUserPassword(txCtx, resetData.PassUserID, string(hashedPwd)); err != nil {
 			return err
 		}
 
-		if err := u.authRepo.MarkTokenAsUsed(txCtx, resetData.PassID); err != nil {
+		if err := a.authRepo.MarkTokenAsUsed(txCtx, resetData.PassID); err != nil {
 			return err
 		}
 
 		return nil
 	})
+}
+
+func (a *AuthService) LoginWithSocial(ctx context.Context, providerName string, code string, userAgent string) (*dto.TokenResponse, error) {
+	provider, exists := a.oauthProviders[providerName]
+	if !exists {
+		return nil, apperror.ErrNotFound
+	}
+
+	profile, err := provider.GetProfile(ctx, code)
+	if err != nil {
+		return nil, apperror.ErrFetchProfileFailed
+	}
+
+	user, err := a.resolveSocialUser(ctx, profile, providerName)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, _ := a.tokenProvider.GenerateAccessToken(user.UserID, "Viewer")
+	refreshToken, _ := a.tokenProvider.GenerateRefreshToken()
+	refreshTokenTTL := 7 * 24 * time.Hour
+
+	err = a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
+		session := &model.Session{
+			SessUserID:       user.UserID,
+			SessRefreshToken: refreshToken,
+			SessUserAgent:    userAgent,
+			SessExpireAt:     time.Now().Add(refreshTokenTTL),
+		}
+
+		if err := a.userRepo.CreateSession(txCtx, session); err != nil {
+			return apperror.ErrInternal.WithRootErr(err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.TokenResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}, nil
+}
+
+func (a *AuthService) resolveSocialUser(ctx context.Context, profile *infrastructure.SocialProfile, providerName string) (*model.User, error) {
+	existingUser, err := a.userRepo.GetUserByEmail(ctx, profile.Email)
+	if err != nil {
+		if errors.Is(err, apperror.ErrNotFound) {
+			newUser := &model.User{
+				UserEmail:    profile.Email,
+				UserFullName: profile.Name,
+				UserAvatar:   profile.Avatar,
+				UserStatus:   "active",
+				AuthProvider: providerName,
+				SocialID:     &profile.ID,
+			}
+			if err := a.userRepo.CreateUser(ctx, newUser); err != nil {
+				return nil, err
+			}
+			return newUser, nil
+		}
+		return nil, err
+	}
+
+	needUpdate := existingUser.AuthProvider != providerName ||
+		existingUser.SocialID == nil ||
+		*existingUser.SocialID != profile.ID
+
+	if needUpdate {
+		_ = a.userRepo.UpdateSocialAuth(ctx, existingUser.UserID, providerName, profile.ID, profile.Avatar)
+		existingUser.AuthProvider = providerName
+		existingUser.SocialID = &profile.ID
+		existingUser.UserAvatar = profile.Avatar
+	}
+
+	return existingUser, nil
 }
