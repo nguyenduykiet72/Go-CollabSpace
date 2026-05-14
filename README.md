@@ -1,520 +1,454 @@
 # GoCollab Backend
 
-Backend service for **GoCollab** - an AI-augmented real-time collaborative workspace platform, built with Go and Gin framework. The system supports real-time collaboration through CRDT (Yjs), semantic search with vector embeddings, and agent-assisted workflows with human-in-the-loop confirmation.
+Backend service for **GoCollab** — a real-time collaborative workspace platform built with Go and Gin framework. The system supports real-time document editing through CRDT (Yjs) over WebSocket, role-based workspace access control, JWT authentication with token rotation, and file storage via AWS S3 presigned URLs.
 
 ## Overview
 
-GoCollab is a real-time collaboration platform designed for teams and SMBs, integrating features:
-- **Real-time collaborative editing**: CRDT-based synchronization with Yjs, supporting offline-first and conflict-free merging
-- **AI-assisted workflows**: Bounded agents supporting summarization, action item suggestions, and pre-fill task descriptions with human confirmation
-- **Semantic search**: Vector search across internal knowledge base (docs, tickets, transcripts) for quick question answering
-- **Event-driven architecture**: Audit/event stream with replay capability, easy to scale into microservices
-- **Privacy & governance**: Tenant isolation, AI governance hooks, rate limiting on LLM calls
+GoCollab is a real-time collaboration platform designed for teams, featuring:
+- **Real-time collaborative editing** — CRDT-based synchronization with Yjs over WebSocket, with server-side persistence to PostgreSQL
+- **Workspace RBAC** — hierarchical role model (Owner > Admin > Editor > Viewer) enforced per-route via middleware
+- **Nested document tree** — recursive CTE-powered tree with cycle detection on move operations
+- **Hybrid search** — Reciprocal Rank Fusion combining pgvector semantic search + tsvector full-text search
+- **JWT authentication** — access/refresh token rotation with SHA-256 hashed refresh tokens, Google OAuth support, password reset via async email
+- **Background workers** — Asynq-based async job queue (Redis) for email delivery and search indexing
+- **Rate limiting** — per-IP Redis-backed GCRA rate limiter on all public auth endpoints
+- **Observability** — Prometheus metrics (WebSocket connections, processed messages), Zap structured logging, Grafana + Loki stack
+- **Graceful shutdown** — orderly drain of HTTP server, WebSocket hub, Asynq workers, Redis, and database connections on SIGTERM
+
+### Planned (AI Features)
+
+- **AI-assisted workflows** — bounded agents for summarization, action item suggestions, pre-fill task descriptions with human-in-the-loop confirmation
+- **Semantic search** — RAG pipeline: chunk → embed → pgvector → LLM answer generation
+- **Event streaming** — Kafka event bus for audit logs, decoupling AI task queue, analytics pipeline
 
 ## Tech Stack
 
-### Core Framework & Language
-- **Go 1.25+**: Primary programming language
-- **Gin**: HTTP web framework
-- **GORM**: ORM for database operations
-
-### Database & Storage
-- **PostgreSQL**: Primary relational database for persistent data (users, teams, documents metadata, transactions)
-- **pgvector**: PostgreSQL extension for vector embeddings and semantic search
-- **Redis**: Caching, presence tracking, ephemeral locks, rate limiting, pub/sub for low-latency notifications
-
-### Real-time & Collaboration
-- **Yjs**: CRDT library for conflict-free collaborative editing
-- **WebSocket**: Real-time bidirectional communication for presence, awareness, and Yjs sync
-
-### Migration & Tooling
-- **Goose**: Database migration tool
-- **golangci-lint**: Static code analysis
-- **Zap**: Structured logging
-
-### Infrastructure (Planned)
-- **Kafka**: Event bus for audit logs, decoupling AI task queue, analytics pipeline
-- **Elasticsearch**: Full-text + vector search for semantic queries
-- **Prometheus + Grafana**: Metrics and monitoring
-- **OpenTelemetry**: Distributed tracing
+| Category | Technology |
+|---|---|
+| **Language** | Go 1.25 |
+| **HTTP Framework** | Gin |
+| **ORM** | GORM |
+| **Database** | PostgreSQL 16 + pgvector + tsvector |
+| **Cache / Pub-Sub** | Redis 8 (go-redis/v9) |
+| **Real-time** | gorilla/websocket, Yjs (CRDT) |
+| **Auth** | golang-jwt/v5 (HS256), bcrypt, Google OAuth2 |
+| **Background Jobs** | Asynq (Redis-backed) |
+| **File Storage** | AWS S3 (presigned URLs via SDK v2) |
+| **Email** | Resend API |
+| **Rate Limiting** | go-redis/redis_rate (GCRA) |
+| **Metrics** | Prometheus client_golang |
+| **Logging** | Zap (JSON structured) |
+| **Migration** | Goose |
+| **Monitoring** | Prometheus + Grafana + Loki + Promtail |
+| **Containerization** | Docker multi-stage (distroless) |
+| **Config** | cleanenv + godotenv |
+| **Linting** | golangci-lint, lefthook (pre-commit) |
 
 ## Architecture
 
-### High-level Architecture
-
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Client (Next.js)                        │
-│              Yjs Client + WebSocket Provider                  │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       │ HTTP/gRPC + WebSocket
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                    Go Backend (Monolith)                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ HTTP/gRPC    │  │ WebSocket    │  │ Background   │      │
-│  │ Handlers     │  │ Server       │  │ Workers      │      │
-│  │ (Auth, Docs) │  │ (Yjs Sync)   │  │ (AI, Index)  │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└──────────┬──────────────┬──────────────┬────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                     Client (Next.js)                           │
+│               Yjs Client + WebSocket Provider                  │
+└────────────────────┬───────────────────────────────────────────┘
+                     │
+                     │ HTTP REST + WebSocket (binary)
+                     │
+┌────────────────────▼───────────────────────────────────────────┐
+│                  Go Backend (Monolith)                          │
+│                                                                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+│  │ REST API     │  │ WebSocket    │  │ Asynq        │         │
+│  │ (Gin)        │  │ Hub          │  │ Workers      │         │
+│  │              │  │ (Yjs Sync)   │  │ (Email,      │         │
+│  │ Auth, RBAC,  │  │ Redis PubSub │  │  Indexing)   │         │
+│  │ Docs, Users  │  │ Persistence  │  │              │         │
+│  └──────────────┘  └──────────────┘  └──────────────┘         │
+│                                                                │
+│  Middleware: Auth → RBAC → RateLimit → ErrorHandler → Recovery │
+│  Metrics:    GET /metrics (Prometheus)                          │
+└──────────┬──────────────┬──────────────┬───────────────────────┘
            │              │              │
     ┌──────▼──────┐ ┌─────▼─────┐ ┌─────▼─────┐
-    │ PostgreSQL  │ │  Redis    │ │  Kafka    │
-    │ + pgvector  │ │ (Cache,   │ │ (Events)  │
-    │             │ │  Pub/Sub) │ │           │
+    │ PostgreSQL  │ │  Redis    │ │  AWS S3   │
+    │ + pgvector  │ │ (Cache,   │ │ (Files)   │
+    │ + tsvector  │ │  PubSub,  │ │           │
+    │             │ │  Asynq,   │ │           │
+    │             │ │  RateLimit)│ │           │
     └─────────────┘ └───────────┘ └───────────┘
 ```
 
-### Main Processing Flows
+### Processing Flows
 
-**1. Real-time Document Editing:**
+**Real-time Document Editing:**
 ```
-User Edit → Yjs Client → WebSocket → Go Yjs Server → CRDT Update → Broadcast to Peers
-```
-
-**2. AI-assisted Workflow:**
-```
-Document Save → Event (Kafka) → Worker → Index to Elasticsearch → 
-AI Job Queue → LLM Call (with context) → Save Draft → Notification → 
-Human Approval → Publish Summary
+User Edit → Yjs Client → WebSocket → Hub → Redis Pub/Sub → Broadcast to Peers
+                                         └→ SaveQueue → AppendYjsUpdate (PostgreSQL)
 ```
 
-**3. Semantic Search:**
+**Hybrid Search (pgvector + tsvector):**
 ```
-Query → Vector Embedding → pgvector/Elasticsearch → 
-Context Retrieval → LLM Answer Generation → Response
+Query → [text_search CTE (tsvector rank)]  ─┐
+      → [semantic_search CTE (pgvector)]    ─┤→ RRF Score → Top K Results
+                                              │
+```
+
+**Background Job Flow:**
+```
+Service → Asynq Distributor → Redis Queue → Processor → (Send Email / Index Document)
 ```
 
 ## Project Structure
 
 ```
 Go-CollabSpace/
-├── cmd/
-│   └── server/
-│       └── main.go              # Application entry point
+├── cmd/server/
+│   └── main.go                    # Entry point, signal handling, graceful shutdown
 ├── config/
-│   ├── config.go                # Configuration management
-│   └── config.dev.yml           # Development config template
+│   ├── config.go                  # Config loader (CONFIG_PATH → MODE → env fallback)
+│   ├── config.development.yml     # Dev defaults (non-secret values only)
+│   └── config.production.yml      # Prod defaults (non-secret values only)
 ├── internal/
 │   ├── common/
-│   │   ├── apperror/            # Custom error types
-│   │   └── token/               # JWT token provider
-│   ├── constant/                # Application constants
-│   ├── controller/              # HTTP handlers (presentation layer)
-│   ├── dto/                     # Data transfer objects
-│   ├── initialize/              # Initialization logic (DB, etc.)
-│   ├── middleware/              # HTTP middleware (auth, error handling)
-│   ├── model/                   # Domain models (GORM entities)
-│   ├── repository/              # Data access layer
-│   ├── router/                  # Route definitions
-│   ├── server/                  # Server setup and initialization
-│   └── service/                 # Business logic layer
-├── migrations/                  # Goose migration files
+│   │   ├── apperror/              # Typed AppError → HTTP status mapping
+│   │   ├── infrastructure/        # Redis, S3, OAuth providers, email senders
+│   │   └── token/                 # JWT provider (HS256 access tokens, random refresh)
+│   ├── constant/                  # Role constants (Owner=1, Admin=2, Editor=3, Viewer=4)
+│   ├── controller/                # HTTP handlers (auth, user, workspace, document, storage, ws)
+│   ├── dto/                       # Request/response DTOs with binding tags
+│   ├── initialize/                # Database initialization
+│   ├── middleware/                 # Auth, RBAC, error handler, rate limiter, auth context
+│   ├── model/                     # GORM models (User, Session, Workspace, Document, etc.)
+│   ├── realtime/                  # WebSocket hub, client, Yjs protocol parser
+│   ├── repository/                # Data access (GORM), transactor pattern
+│   ├── router/                    # Route registration, handler grouping
+│   ├── server/                    # Server wiring (DI), graceful shutdown
+│   ├── service/                   # Business logic (auth, workspace, document, storage)
+│   ├── telemetry/                 # Prometheus gauge/counter definitions
+│   └── worker/                    # Asynq distributor + processor (email, search index)
+├── migrations/                    # Goose SQL migrations (8 files)
 ├── pkg/
-│   ├── httpx/                   # HTTP utilities (response helpers)
-│   └── logger/                  # Logging utilities
-├── docker-compose.yml           # Local development infrastructure
-├── Makefile                     # Development commands
-├── go.mod                       # Go module dependencies
-└── README.md                    # This file
+│   ├── hash/                      # SHA-256 token hashing
+│   ├── httpx/                     # JSON response helpers
+│   └── logger/                    # Zap logger initialization
+├── docker/
+│   ├── docker-compose.monitoring.yml   # Prometheus + Grafana + Loki + Promtail
+│   └── config/                    # Prometheus, Loki, Promtail config files
+├── Dockerfile                     # Multi-stage build (Go 1.25 → distroless, ~15MB)
+├── .dockerignore
+├── docker-compose.yml             # PostgreSQL (pgvector) + Redis for local dev
+├── Makefile                       # Dev commands (run, build, lint, test, migrations)
+├── lefthook.yml                   # Git hooks (pre-commit: tidy, fmt, lint)
+├── .golangci.yml                  # Linter configuration
+└── .env.sample                    # Environment variable template
 ```
 
-### Architecture Pattern
+### Architecture Layers
 
-The project follows **Clean Architecture** with the following layers:
-
-- **Controller**: HTTP request/response handling, validation
-- **Service**: Business logic, orchestration
-- **Repository**: Data persistence abstraction
-- **Model**: Domain entities and database schema
+| Layer | Responsibility |
+|---|---|
+| **Controller** | HTTP request parsing, input validation (`binding` tags), error delegation via `ctx.Error()` |
+| **Service** | Business logic, authorization checks, transaction orchestration |
+| **Repository** | GORM queries, context-scoped transactions via `transactor.getDB(ctx)` |
+| **Model** | GORM entities (UUID PKs, soft delete, table name overrides) |
+| **Middleware** | Auth extraction, RBAC enforcement, rate limiting, centralized error→JSON mapping |
 
 ## Prerequisites
 
-- **Go 1.25+**: [Installation guide](https://go.dev/doc/install)
-- **PostgreSQL 16+** with `pgvector` extension: [pgvector installation](https://github.com/pgvector/pgvector)
-- **Redis 7+**: [Redis installation](https://redis.io/docs/getting-started/)
-- **Docker & Docker Compose** (optional, for local development)
-- **Goose**: Migration tool (will be installed via Makefile)
+- **Go 1.25+** — [install](https://go.dev/doc/install)
+- **PostgreSQL 16+** with `pgvector` and `uuid-ossp` extensions — [pgvector](https://github.com/pgvector/pgvector)
+- **Redis 7+** — [install](https://redis.io/docs/getting-started/)
+- **Docker & Docker Compose** (recommended for local infra)
 
-## Installation & Setup
-
-### 1. Clone Repository
+## Quick Start
 
 ```bash
+# 1. Clone and install deps
 git clone <repository-url>
 cd Go-CollabSpace
-```
-
-### 2. Install Dependencies
-
-```bash
 go mod download
-go mod verify
-```
 
-### 3. Install Development Tools
-
-```bash
+# 2. Install dev tools
 make install-tools
-```
 
-Or install manually:
-```bash
-go install golang.org/x/tools/cmd/goimports@latest
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-go install github.com/pressly/goose/v3/cmd/goose@latest
-```
+# 3. Start infrastructure
+make docker-up          # PostgreSQL (pgvector/pg16) + Redis
 
-### 4. Setup Infrastructure with Docker Compose
+# 4. Configure
+cp .env.sample .env     # fill in your secrets
 
-```bash
-# Start PostgreSQL (with pgvector) and Redis
-make docker-up
-
-# Check running containers
-docker ps
-```
-
-### 5. Database Setup
-
-```bash
-# Apply migrations
+# 5. Run migrations
 make db-up
 
-# Check migration status
-make db-status
+# 6. Start server
+make run                # http://localhost:8080
 ```
-
-### 6. Configuration
-
-Create `.env` file from template or copy `config/config.dev.yml` and adjust:
-
-```bash
-cp config/config.dev.yml config/config.local.yml
-```
-
-Or use environment variables:
-
-```bash
-# Server
-export PORT=8080
-export MODE=development
-
-# Database
-export DB_HOST=localhost
-export DB_PORT=5445
-export DB_USER=postgres
-export DB_PASSWORD=123456789
-export DB_NAME=CollabSpace
-export DB_TYPE=postgres
-
-# JWT
-export JWT_ACCESS_SECRET=your-access-secret-key
-export JWT_REFRESH_SECRET=your-refresh-secret-key
-export JWT_ACCESS_DURATION=1h
-export JWT_REFRESH_DURATION=168h
-```
-
-### 7. Run Application
-
-```bash
-# Development mode
-make run
-
-# Or directly
-go run cmd/server/main.go
-```
-
-Server will run at `http://localhost:8080`
 
 ## Configuration
+
+Configuration is loaded in the following precedence (highest wins):
+
+1. **Environment variables** — always override file values
+2. **`$CONFIG_PATH`** — explicit file path (K8s configmap, CI override)
+3. **`./config/config.<MODE>.yml`** — derived from `$MODE` (default `development`)
+4. **Pure env-only** — when no config file found (typical for production containers)
+
+`.env` is loaded first (best-effort via godotenv) so local devs can keep secrets out of shell history.
 
 ### Environment Variables
 
 | Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
+|---|---|---|---|
 | `PORT` | Server port | `8080` | No |
-| `MODE` | Gin mode (development/release/test) | `development` | No |
-| `DB_HOST` | PostgreSQL host | - | Yes |
-| `DB_PORT` | PostgreSQL port | - | Yes |
-| `DB_USER` | Database user | - | Yes |
-| `DB_PASSWORD` | Database password | - | Yes |
-| `DB_NAME` | Database name | - | Yes |
-| `DB_TYPE` | Database type (postgres/mysql) | `postgres` | No |
-| `JWT_ACCESS_SECRET` | JWT access token secret | - | Yes |
-| `JWT_REFRESH_SECRET` | JWT refresh token secret | - | Yes |
-| `JWT_ACCESS_DURATION` | Access token duration | `1h` | No |
-| `JWT_REFRESH_DURATION` | Refresh token duration | `168h` | No |
+| `MODE` | App mode (`development` / `production`) | `development` | No |
+| `CONFIG_PATH` | Explicit config file path | — | No |
+| `ALLOWED_ORIGINS` | Comma-separated CORS/WS origin whitelist | `http://localhost:3000,http://localhost:3001` | No |
+| `DB_HOST` | PostgreSQL host | — | Yes |
+| `DB_PORT` | PostgreSQL port | — | Yes |
+| `DB_USER` | Database user | — | Yes |
+| `DB_PASSWORD` | Database password | — | Yes |
+| `DB_NAME` | Database name | — | Yes |
+| `DB_TYPE` | Database type | `postgres` | No |
+| `JWT_ACCESS_SECRET` | JWT access token signing key | — | Yes |
+| `JWT_REFRESH_SECRET` | JWT refresh token signing key | — | Yes |
+| `JWT_ACCESS_DURATION` | Access token TTL | `1h` | No |
+| `JWT_REFRESH_DURATION` | Refresh token TTL | `168h` | No |
+| `REDIS_HOST` | Redis host | — | Yes |
+| `REDIS_PORT` | Redis port | — | Yes |
+| `REDIS_PASSWORD` | Redis password | — | Yes |
+| `AWS_REGION` | S3 region | — | Yes |
+| `AWS_ACCESS_KEY_ID` | S3 access key | — | Yes |
+| `AWS_SECRET_ACCESS_KEY` | S3 secret key | — | Yes |
+| `AWS_BUCKET_NAME` | S3 bucket name | — | Yes |
+| `RESEND_API_KEY` | Resend email API key | — | Yes |
+| `RESEND_FROM_EMAIL` | Sender email address | — | Yes |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID | — | Yes |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | — | Yes |
+| `GOOGLE_REDIRECT_URL` | Google OAuth redirect URL | — | Yes |
 
-### Config File Structure
-
-Configuration is loaded in the following priority order:
-1. Environment variables (highest priority)
-2. `config/config.dev.yml` (or specified file)
-3. Default values
-
-## Database Migrations
-
-The project uses **Goose** for database migrations.
-
-### Create New Migration
-
-```bash
-make db-create name=add_users_table
-```
-
-Migration file will be created at `migrations/YYYYMMDDHHMMSS_add_users_table.sql`
-
-### Apply Migrations
-
-```bash
-# Apply all pending migrations
-make db-up
-
-# Rollback last migration
-make db-down
-
-# Reset database (rollback all then reapply)
-make db-reset
-
-# View migration status
-make db-status
-```
-
-### Migration Best Practices
-
-- Each migration must be **reversible** (has both `up` and `down`)
-- Do not modify migrations that have been applied to production
-- Test migrations on staging before applying to production
-- Use transactions when possible
-
-## Development
-
-### Code Quality
-
-```bash
-# Format code
-make fmt
-
-# Check formatting
-make fmt-check
-
-# Run linter
-make lint
-
-# Run tests
-make test
-
-# Run tests with coverage
-make test-coverage
-
-# Run all checks (pre-commit)
-make pre-commit
-```
-
-### Project Structure Guidelines
-
-- **Controllers**: Only handle HTTP request/response, validation, error handling
-- **Services**: Contains business logic, not dependent on HTTP layer
-- **Repositories**: Data access layer, abstract database operations
-- **Models**: Domain entities, GORM models
-- **DTOs**: Data transfer objects for API contracts
-
-### Logging
-
-The project uses **Zap** for structured logging:
-
-```go
-logger.Log.Info("User created", zap.String("userID", userID))
-logger.Log.Error("Database error", zap.Error(err))
-```
-
-Log levels: `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`
-
-## API Documentation
+## API
 
 ### Base URL
 
 ```
-Development: http://localhost:8080/api/v1
+http://localhost:8080/api/v1
 ```
 
 ### Authentication
 
-API uses JWT-based authentication. After login, include token in header:
+JWT-based. After login, include token in header:
 
 ```
 Authorization: Bearer <access_token>
 ```
 
+Refresh tokens are rotated: each `/auth/refresh` call revokes the old session and issues a new pair.
+
 ### Endpoints
 
-#### Authentication
+#### Auth (Public, rate-limited)
 
-**POST** `/api/v1/auth/register`
-- Register new user
-- Request body: `{ "email": "...", "password": "...", "name": "..." }`
-- Response: `{ "accessToken": "...", "refreshToken": "..." }`
+| Method | Path | Description | Rate Limit |
+|---|---|---|---|
+| `POST` | `/auth/register` | Register new user | 5/min |
+| `POST` | `/auth/login` | Login (email + password) | 10/min |
+| `POST` | `/auth/refresh` | Rotate access/refresh tokens | 30/min |
+| `POST` | `/auth/forgot-password` | Request password reset email | 5/hour |
+| `POST` | `/auth/reset-password` | Reset password with token | 10/hour |
+| `POST` | `/auth/oauth/:provider` | Social login (Google) | 10/min |
 
-**POST** `/api/v1/auth/login`
-- User login
-- Request body: `{ "email": "...", "password": "..." }`
-- Response: `{ "accessToken": "...", "refreshToken": "..." }`
+#### Users (Protected)
+
+| Method | Path | Description | Min Role |
+|---|---|---|---|
+| `GET` | `/user/all` | List all users (paginated) | Authenticated |
 
 #### Workspace (Protected)
 
-**POST** `/api/v1/workspace`
-- Create new workspace
-- Headers: `Authorization: Bearer <token>`
-- Request body: `{ "name": "...", "description": "..." }`
+| Method | Path | Description | Min Role |
+|---|---|---|---|
+| `POST` | `/workspace` | Create workspace | Authenticated |
+| `GET` | `/workspace/:workspaceId` | Get workspace details (with members) | Viewer |
+| `POST` | `/workspace/:workspaceId/members` | Add members to workspace | Admin |
 
-**GET** `/api/v1/workspace/:workspaceId`
-- Get workspace information
-- Headers: `Authorization: Bearer <token>`
+#### Documents (Protected)
 
-#### Document (Protected)
+| Method | Path | Description | Min Role |
+|---|---|---|---|
+| `GET` | `/workspace/:workspaceId/document` | List workspace documents | Viewer |
+| `GET` | `/workspace/:workspaceId/document/:docId` | Get document detail | Viewer |
+| `GET` | `/workspace/:workspaceId/document/tree` | Get nested document tree | Viewer |
+| `POST` | `/workspace/:workspaceId/document` | Create document | Editor |
+| `PUT` | `/workspace/:workspaceId/document/:docId/move` | Move document (cycle-safe) | Editor |
+| `PUT` | `/workspace/:workspaceId/document/:docId/snapshot` | Save document snapshot | Editor |
 
-**POST** `/api/v1/document`
-- Create new document
-- Headers: `Authorization: Bearer <token>`
-- Request body: `{ "workspaceId": "...", "title": "...", "content": "..." }`
+#### WebSocket
 
-**GET** `/api/v1/document/:docId`
-- Get document detail
-- Headers: `Authorization: Bearer <token>`
+| Path | Description |
+|---|---|
+| `GET` `/ws/?token=<jwt>&doc_id=<uuid>` | Yjs binary sync (origin-checked, role-enforced) |
 
-**GET** `/api/v1/document/doc/:workspaceId`
-- Get all documents in workspace
-- Headers: `Authorization: Bearer <token>`
+#### Monitoring
 
-### Error Response Format
+| Path | Description |
+|---|---|
+| `GET` `/metrics` | Prometheus metrics |
 
+### Response Format
+
+**Success:**
 ```json
 {
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable error message",
-    "details": {}
-  }
+  "statusCode": 200,
+  "message": "Documents retrieved successfully",
+  "data": { ... }
 }
 ```
 
-## Testing
+**Error:**
+```json
+{
+  "statusCode": 401,
+  "message": "Unauthorized",
+  "errorKey": "UNAUTHORIZED"
+}
+```
 
-### Unit Tests
+## Database Migrations
+
+The project uses **Goose** for SQL migrations.
 
 ```bash
-# Run all tests
-make test
-
-# Run tests with race detection
-go test -race ./...
-
-# Run tests for specific package
-go test ./internal/service/...
+make db-create name=add_users_table   # Create new migration
+make db-up                            # Apply all pending
+make db-down                          # Rollback last
+make db-reset                         # Down to 0, then up
+make db-status                        # Show status
 ```
 
-### Integration Tests
+### Current Schema
 
-Integration tests will test with test database. Setup test database before running:
+| Table | Purpose |
+|---|---|
+| `tbl_users` | Users (UUID PK, email unique, bcrypt password, soft delete) |
+| `tbl_sessions` | Refresh token sessions (hashed token, blocked flag, expiry) |
+| `tbl_workspaces` | Workspaces (slug unique, soft delete) |
+| `tbl_roles` | Role definitions (Owner, Admin, Editor, Viewer) |
+| `tbl_workspace_members` | User-workspace-role mapping (unique composite) |
+| `tbl_documents` | Documents (nested via `doc_parent_id`, soft delete) |
+| `tbl_document_states` | Yjs binary state (bytea) + plaintext |
+| `tbl_document_chunks` | Chunks with vector embedding (pgvector HNSW) + tsvector (GIN) |
+| `tbl_doc_embeddings` | Document-level vector embeddings (HNSW index) |
+| `tbl_files` | File metadata (S3 key, status enum, expiry) |
+| `tbl_password_resets` | Password reset tokens (hashed, expiry, used flag) |
+| `tbl_audit_logs` | Audit trail (workspace, actor, entity, action, JSONB payload) |
+
+## Development
 
 ```bash
-# Create test database
-createdb collabspace_test
-
-# Run integration tests
-go test -tags=integration ./...
+make fmt              # Format with goimports
+make fmt-check        # Check formatting
+make lint             # Run golangci-lint
+make test             # Run tests with race detection
+make test-coverage    # Tests + HTML coverage report
+make pre-commit       # fmt + lint + test
 ```
 
-### Test Coverage
+### Monitoring Stack (Optional)
 
 ```bash
-make test-coverage
+cd docker
+docker compose -f docker-compose.monitoring.yml up -d
 ```
 
-Coverage report will be generated at `coverage.html`
+- **Prometheus**: http://localhost:9090
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Loki**: http://localhost:3100
 
-## Deployment
+## Docker Deployment
 
-### Build Binary
+### Build
 
 ```bash
-make build
+# Development build
+docker build -t go-collabspace:dev .
+
+# Production build with metadata
+docker build \
+  --build-arg VERSION=$(git describe --tags --always) \
+  --build-arg COMMIT=$(git rev-parse --short HEAD) \
+  --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  -t go-collabspace:$(git rev-parse --short HEAD) .
 ```
 
-Binary will be created at `bin/Go-CollabSpace`
+### Run
 
-### Production Considerations
+```bash
+# Using env vars directly
+docker run --rm -p 8080:8080 \
+  -e MODE=production \
+  -e DB_HOST=postgres -e DB_PORT=5432 \
+  -e DB_USER=postgres -e DB_PASSWORD=secret \
+  -e DB_NAME=CollabSpace -e DB_TYPE=postgres \
+  -e REDIS_HOST=redis -e REDIS_PORT=6379 -e REDIS_PASSWORD=secret \
+  -e JWT_ACCESS_SECRET=... -e JWT_REFRESH_SECRET=... \
+  -e ALLOWED_ORIGINS=https://app.example.com \
+  go-collabspace:latest
 
-1. **Environment Variables**: Use secret management (AWS Secrets Manager, HashiCorp Vault, etc.)
-2. **Database**: Setup connection pooling, read replicas for scaling
-3. **Redis**: Configure persistence and high availability
-4. **Monitoring**: Setup Prometheus metrics, Grafana dashboards
-5. **Logging**: Centralized logging (ELK stack, Loki, etc.)
-6. **Security**: 
-   - Enable HTTPS/TLS
-   - Rate limiting
-   - CORS configuration
-   - Input validation and sanitization
-
-### Docker Deployment
-
-```dockerfile
-# Example Dockerfile (needs to be created)
-FROM golang:1.25-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN go build -o bin/Go-CollabSpace cmd/server/main.go
-
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/bin/Go-CollabSpace .
-CMD ["./Go-CollabSpace"]
+# Using .env file
+docker run --rm -p 8080:8080 --env-file .env go-collabspace:latest
 ```
 
-## Roadmap & Future Enhancements
+### Image Details
 
-### Planned Features
+| Property | Value |
+|---|---|
+| Base image | `gcr.io/distroless/static-debian12:nonroot` |
+| Binary | Static (`CGO_ENABLED=0`), stripped (`-ldflags "-s -w"`) |
+| User | `nonroot` (uid 65532) |
+| Approx. size | ~15 MB |
+| Build cache | Docker mount cache for Go build + module cache |
 
-- [ ] WebSocket server for Yjs synchronization
-- [ ] Vector search integration with pgvector
-- [ ] AI agent workflows with LLM integration
-- [ ] Event streaming with Kafka
-- [ ] Elasticsearch integration for full-text + vector search
-- [ ] Background workers for async tasks
-- [ ] Rate limiting middleware
-- [ ] Tenant isolation and multi-tenancy support
+## Roadmap
+
+### Implemented
+- [x] JWT auth with refresh token rotation (SHA-256 hashed)
+- [x] Google OAuth social login
+- [x] Password reset flow (async email via Asynq + Resend)
+- [x] Workspace CRUD with RBAC (Owner/Admin/Editor/Viewer)
+- [x] Nested document tree (recursive CTE) with cycle-safe move
+- [x] WebSocket hub with Yjs binary relay + Redis pub/sub fan-out
+- [x] Yjs state persistence to PostgreSQL (bytea append)
+- [x] Hybrid search SQL (pgvector + tsvector + RRF)
+- [x] S3 presigned URL file uploads
+- [x] Per-IP Redis rate limiting on auth endpoints
+- [x] Prometheus metrics (WS connections, messages)
+- [x] Grafana + Loki + Promtail monitoring stack
+- [x] Graceful shutdown (HTTP + WS Hub + Asynq + Redis + DB)
+- [x] Multi-stage Dockerfile (distroless, ~15MB)
+- [x] Environment-aware config loading (CONFIG_PATH / MODE / env-only)
+
+### Planned
+- [ ] AI agent workflows with LLM integration (summarize, action items, human-in-the-loop)
+- [ ] RAG search pipeline (chunk → embed → pgvector → LLM answer)
 - [ ] OpenTelemetry distributed tracing
-- [ ] Prometheus metrics export
-
-### Architecture Evolution
-
-Currently a **monolithic architecture**, but designed to easily evolve into **microservices**:
-
-- Event-driven design with Kafka
-- Clear separation of concerns (Clean Architecture)
-- Repository pattern for database abstraction
-- Service layer can be extracted into independent services
+- [ ] Health endpoints (`/healthz`, `/readyz`)
+- [ ] OpenAPI/Swagger documentation
+- [ ] GitHub Actions CI/CD pipeline
+- [ ] Yjs server-side snapshot compaction
+- [ ] WebSocket presence + cursor awareness
+- [ ] Audit log decorator on service mutations
+- [ ] Load testing report (k6 / vegeta + pprof)
 
 ## Contributing
 
 1. Fork repository
 2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Create Pull Request
+3. Run `make pre-commit` before committing
+4. Push and create Pull Request
 
-### Code Style
+Commit messages must follow the pattern `GCS-<number>: description` (enforced by lefthook).
 
-- Follow Go conventions and best practices
-- Run `make pre-commit` before committing
-- Write tests for new features
-- Update documentation when needed
-
-## Support & Contact
+## Contact
 
 Email: elliotnguyen909@gmail.com
-
-

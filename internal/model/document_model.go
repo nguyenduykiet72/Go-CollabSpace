@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
 )
 
@@ -36,6 +37,25 @@ type DocEmbedding struct {
 	EmbTokenCount int       `gorm:"column:emb_token_count"`
 }
 
+type FlatDocNode struct {
+	DocID    uuid.UUID  `db:"doc_id"`
+	ParentID *uuid.UUID `db:"doc_parent_id"`
+	Title    string     `db:"doc_title"`
+	Emoji    string     `db:"doc_emoji"`
+	Status   string     `db:"doc_status"`
+	Depth    int        `db:"depth"`
+}
+
+type DocumentChunk struct {
+	ChunkID         uuid.UUID       `gorm:"primaryKey;type:uuid;default:uuid_generate_v4();column:dock_id"`
+	ChunkDocID      uuid.UUID       `gorm:"type:uuid;not null;index;column:dock_doc_id"`
+	ChunkContent    string          `gorm:"type:text;not null;column:dock_content"`
+	ChunkEmbedding  pgvector.Vector `gorm:"type:vector(1536);column:dock_embedding"`
+	ChunkTextSearch string          `gorm:"type:tsvector;column:dock_text_search;<-:false"`
+	ChunkCreatedAt  time.Time       `gorm:"autoCreateTime;column:dock_created_at"`
+}
+
 func (Document) TableName() string      { return "tbl_documents" }
 func (DocumentState) TableName() string { return "tbl_document_states" }
 func (DocEmbedding) TableName() string  { return "tbl_doc_embeddings" }
+func (DocumentChunk) TableName() string { return "tbl_document_chunks" }

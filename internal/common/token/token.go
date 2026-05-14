@@ -20,14 +20,17 @@ type ConfigToken struct {
 	RefreshTokenDuration time.Duration
 }
 
+// UserClaims is the JWT body. Workspace-level roles are NOT carried in the
+// token: authorisation is resolved at the middleware layer by joining
+// tbl_workspace_members on every protected request. The token only proves
+// "this user is authenticated".
 type UserClaims struct {
 	UserID uuid.UUID `json:"user_id"`
-	Role   string    `json:"role"`
 	jwt.RegisteredClaims
 }
 
 type ITokenProvider interface {
-	GenerateAccessToken(userID uuid.UUID, role string) (string, error)
+	GenerateAccessToken(userID uuid.UUID) (string, error)
 	GenerateRefreshToken() (string, error)
 	ValidateAccessToken(tokenString string) (*UserClaims, error)
 }

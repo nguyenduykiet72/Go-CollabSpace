@@ -26,25 +26,13 @@ func (w *workspaceRepository) CreateWorkspace(ctx context.Context, workspace *mo
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				return apperror.ErrSlugExists
 			}
-			// var pgErr *pgconn.PgError
-			// if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			// 	if strings.Contains(pgErr.ConstraintName, "slug") {
-			// 		return apperror.ErrSlugExists
-			// 	}
-			// 	return apperror.ErrSlugExists
-			// }
 			return err
-		}
-
-		var ownerRole model.Role
-		if err := tx.Where("role_name = ?", constant.RoleOwner).First(&ownerRole).Error; err != nil {
-			return errors.New("system error: Owner role not found")
 		}
 
 		member := model.WorkspaceMember{
 			WpmWorkspaceID: workspace.WpID,
 			WpmUserID:      workspace.WpOwnerID,
-			WpmRoleID:      ownerRole.RoleID,
+			WpmRoleID:      constant.RoleOwner,
 		}
 
 		if err := tx.Create(&member).Error; err != nil {

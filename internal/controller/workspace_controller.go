@@ -43,7 +43,6 @@ func (c *WorkspaceController) CreateWorkspace(ctx *gin.Context) {
 
 	var req dto.CreateWorkspaceRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		// ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		_ = ctx.Error(apperror.ErrBadRequest)
 		return
 	}
@@ -60,7 +59,6 @@ func (c *WorkspaceController) CreateWorkspace(ctx *gin.Context) {
 func (c *WorkspaceController) GetWorkspaceByID(ctx *gin.Context) {
 	var param dto.GetWorkspaceParams
 	if err := ctx.ShouldBindUri(&param); err != nil {
-		fmt.Println("Error binding URI:", err)
 		_ = ctx.Error(apperror.ErrBadRequest)
 		return
 	}
@@ -98,14 +96,13 @@ func (c *WorkspaceController) AddMembers(ctx *gin.Context) {
 		_ = ctx.Error(apperror.ErrBadRequest)
 		return
 	}
-	fmt.Print("Workspace ID:", workspaceID)
+
 	var req dto.AddMembersRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		fmt.Println("Error binding JSON:", err)
 		_ = ctx.Error(apperror.ErrBadRequest)
 		return
 	}
-	fmt.Print("something here......")
+
 	added, err := c.workspaceService.AddMembers(ctx.Request.Context(), workspaceID, req, userClaims.UserID)
 	if err != nil {
 		_ = ctx.Error(err)

@@ -1,7 +1,12 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,15 +16,23 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig `yaml:"server"`
-	Database DBConfig     `yaml:"database"`
-	JWT      JWTConfig    `yaml:"jwt"`
-	Redis    RedisConfig  `yaml:"redis"`
+	Server      ServerConfig      `yaml:"server"`
+	Database    DBConfig          `yaml:"database"`
+	JWT         JWTConfig         `yaml:"jwt"`
+	Redis       RedisConfig       `yaml:"redis"`
+	AWS         AWSConfig         `yaml:"aws"`
+	ResendEmail ResendEmailConfig `yaml:"resendEmail"`
+	//SMTP        SMTPConfig        `yaml:"smtp"`
+	OAuthGoogleConfig OAuthGoogleConfig `yaml:"oauthGoogle"`
 }
 
 type ServerConfig struct {
 	Port int    `yaml:"port" env:"PORT" env-default:"8080" validate:"required"`
 	Mode string `yaml:"mode" env:"MODE" env-default:"development" validate:"required"`
+	// AllowedOrigins is the comma-separated list of origins permitted for both
+	// CORS and WebSocket Origin checks. Example:
+	//   ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+	AllowedOrigins []string `yaml:"allowedOrigins" env:"ALLOWED_ORIGINS" env-separator:"," env-default:"http://localhost:3000,http://localhost:3001"`
 }
 
 type DBConfig struct {
@@ -29,6 +42,12 @@ type DBConfig struct {
 	Password string `yaml:"password" env:"DB_PASSWORD" validate:"required"`
 	DBName   string `yaml:"dbname" env:"DB_NAME" validate:"required"`
 	Type     string `yaml:"type" env:"DB_TYPE" env-default:"postgres" validate:"required,oneof=postgres mysql"`
+}
+
+type OAuthGoogleConfig struct {
+	ClientID     string `yaml:"client_id" env:"GOOGLE_CLIENT_ID" validate:"required"`
+	ClientSecret string `yaml:"client_secret" env:"GOOGLE_CLIENT_SECRET" validate:"required"`
+	RedirectURL  string `yaml:"redirect_url" env:"GOOGLE_REDIRECT_URL" validate:"required"`
 }
 
 type JWTConfig struct {
@@ -44,6 +63,26 @@ type RedisConfig struct {
 	Password string `yaml:"password" env:"REDIS_PASSWORD" validate:"required"`
 }
 
+type AWSConfig struct {
+	Region          string `yaml:"region" env:"AWS_REGION" validate:"required"`
+	AccessKeyID     string `yaml:"accessKeyId" env:"AWS_ACCESS_KEY_ID" validate:"required"`
+	SecretAccessKey string `yaml:"secretAccessKey" env:"AWS_SECRET_ACCESS_KEY" validate:"required"`
+	BucketName      string `yaml:"bucketName" env:"AWS_BUCKET_NAME" validate:"required"`
+}
+
+type ResendEmailConfig struct {
+	ResendAPIKey string `yaml:"resendApiKey" env:"RESEND_API_KEY" validate:"required"`
+	FromEmail    string `yaml:"fromEmail" env:"RESEND_FROM_EMAIL" validate:"required"`
+}
+
+//type SMTPConfig struct {
+//	Host     string `yaml:"host" env:"SMTP_HOST" env-default:"smtp.gmail.com"`
+//	Port     int    `yaml:"port" env:"SMTP_PORT" env-default:"587"`
+//	Username string `yaml:"username" env:"SMTP_USERNAME" validate:"required"`
+//	Password string `yaml:"password" env:"SMTP_PASSWORD" validate:"required"` // Dùng App Password nếu là Gmail
+//	From     string `yaml:"from" env:"SMTP_FROM" validate:"required"`
+//}
+
 var (
 	cfg  *Config
 	once sync.Once
@@ -57,21 +96,60 @@ func LoadConfig() (*Config, error) {
 
 		_ = godotenv.Load()
 
-		err = cleanenv.ReadConfig("./config/config.dev.yml", cfg)
-		if err != nil {
-			fmt.Println("Config file not found, trying environment variables:", err)
+		path := resolveConfigPath()
+		if path != "" {
+			if readErr := cleanenv.ReadConfig(path, cfg); readErr != nil {
+				err = fmt.Errorf("failed to read config %q: %w", path, readErr)
+				return
+			}
+		} else {
 			if envErr := cleanenv.ReadEnv(cfg); envErr != nil {
-				err = envErr
+				err = fmt.Errorf("failed to read env config: %w", envErr)
 				return
 			}
 		}
 
 		validate := validator.New()
 		if validateErr := validate.Struct(cfg); validateErr != nil {
-			err = fmt.Errorf("config validation failed :%w", validateErr)
+			err = fmt.Errorf("config validation failed: %w", validateErr)
 			return
 		}
 	})
 
 	return cfg, err
+}
+
+// resolveConfigPath picks the YAML file to read. Returns "" when no file is
+// available, signalling that the caller should fall back to env-only loading.
+func resolveConfigPath() string {
+	if explicit := strings.TrimSpace(os.Getenv("CONFIG_PATH")); explicit != "" {
+		if fileExists(explicit) {
+			return explicit
+		}
+		fmt.Fprintf(os.Stderr, "CONFIG_PATH=%q not found, falling back to environment variables\n", explicit)
+		return ""
+	}
+
+	mode := strings.TrimSpace(os.Getenv("MODE"))
+	if mode == "" {
+		mode = "development"
+	}
+	candidate := filepath.Join("config", fmt.Sprintf("config.%s.yml", mode))
+	if fileExists(candidate) {
+		return candidate
+	}
+
+	return ""
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+		fmt.Fprintf(os.Stderr, "config stat %q: %v\n", path, err)
+		return true
+	}
+	return !info.IsDir()
 }

@@ -2,46 +2,21 @@ package router
 
 import (
 	"Go-CollabSpace/internal/common/token"
-	"Go-CollabSpace/internal/controller"
 	"Go-CollabSpace/internal/middleware"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-type AppHandlers struct {
-	UserController      *controller.UserController
-	WorkspaceController *controller.WorkspaceController
-	DocumentController  *controller.DocumentController
-}
-
-func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvider) {
+func SetUpRoutes(r *gin.Engine, ah AppHandlers, tokenProvider token.ITokenProvider, db *gorm.DB) {
 	v1 := r.Group("/api/v1")
-	{
-		userGroup := v1.Group("/auth")
-		{
-			userGroup.POST("/register", ah.UserController.Register)
-			userGroup.POST("/login", ah.UserController.Login)
-		}
 
-		protectedGroup := v1.Group("/")
-		protectedGroup.Use(middleware.AuthMiddleware(tokenProvider))
-		{
-			user := protectedGroup.Group("/users")
-			{
-				user.GET("", ah.UserController.GetAllUsers)
-			}
-			wp := protectedGroup.Group("/workspace")
-			{
-				wp.POST("", ah.WorkspaceController.CreateWorkspace)
-				wp.GET("/:workspaceId", ah.WorkspaceController.GetWorkspaceByID)
-				wp.POST("/:workspaceId/members", ah.WorkspaceController.AddMembers)
-			}
-			doc := protectedGroup.Group("/document")
-			{
-				doc.POST("", ah.DocumentController.CreateDoc)
-				doc.GET("/doc/:workspaceId", ah.DocumentController.GetWorkspaceDocs)
-				doc.GET("/:docId", ah.DocumentController.GetDocDetail)
-			}
-		}
-	}
+	publicRoutes := v1.Group("/")
+	protectedRoutes := v1.Group("/")
+	protectedRoutes.Use(middleware.AuthMiddleware(tokenProvider))
+
+	registerAuthRoutes(publicRoutes, ah)
+	registerUserRoutes(protectedRoutes, ah)
+	registerWorkspaceRoutes(protectedRoutes, ah, db)
+	registerDocumentRoutes(protectedRoutes, ah, db)
 }

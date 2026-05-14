@@ -36,6 +36,10 @@ type Hub struct {
 	DocRepo     DocRepoForHub
 	Mutex       sync.RWMutex
 	RedisClient *infrastructure.RedisClient
+
+	quit     chan struct{}
+	saverWg  sync.WaitGroup
+	stopOnce sync.Once
 }
 
 func NewHub(docRepo DocRepoForHub, redisClient *infrastructure.RedisClient) *Hub {
@@ -47,10 +51,12 @@ func NewHub(docRepo DocRepoForHub, redisClient *infrastructure.RedisClient) *Hub
 		saveQueue:   make(chan *BroadcastMessage, 1000),
 		DocRepo:     docRepo,
 		RedisClient: redisClient,
+		quit:        make(chan struct{}),
 	}
 }
 
 func (h *Hub) runSaver() {
+	defer h.saverWg.Done()
 	for msg := range h.saveQueue {
 		msgType, payload := ParseYjsMessage(msg.Payload)
 
@@ -95,28 +101,56 @@ func (h *Hub) subscribeToRedisChannel(docID uuid.UUID) {
 }
 
 func (h *Hub) broadcastToLocalClients(msg *BroadcastMessage) {
+	// Phase 1: under RLock, snapshot recipients and collect slow clients.
 	h.Mutex.RLock()
 	clients := h.Rooms[msg.DocID]
+	var dead []*Client
 	for client := range clients {
-		if client.UserID != msg.SenderId {
-			select {
-			case client.Send <- msg.Payload:
-			default:
-				close(client.Send)
-				delete(clients, client)
-			}
+		if client.UserID == msg.SenderId {
+			continue
+		}
+		select {
+		case client.Send <- msg.Payload:
+		default:
+			dead = append(dead, client)
 		}
 	}
 	h.Mutex.RUnlock()
+
+	if len(dead) == 0 {
+		return
+	}
+
+	// Phase 2: upgrade to write lock to evict slow clients.
+	h.Mutex.Lock()
+	defer h.Mutex.Unlock()
+	room, ok := h.Rooms[msg.DocID]
+	if !ok {
+		return
+	}
+	for _, client := range dead {
+		if _, stillThere := room[client]; stillThere {
+			delete(room, client)
+			client.CloseSend()
+		}
+	}
+	if len(room) == 0 {
+		delete(h.Rooms, msg.DocID)
+	}
 }
 
 func (h *Hub) Run() {
+	h.saverWg.Add(1)
 	go h.runSaver()
 
 	log.Println("Hub is running...")
 
 	for {
 		select {
+		case <-h.quit:
+			h.shutdown()
+			return
+
 		case client := <-h.Register:
 			h.Mutex.Lock()
 			if h.Rooms[client.DocID] == nil {
@@ -156,7 +190,7 @@ func (h *Hub) Run() {
 			if clients, ok := h.Rooms[client.DocID]; ok {
 				if _, ok := clients[client]; ok {
 					delete(clients, client)
-					close(client.Send)
+					client.CloseSend()
 					if len(clients) == 0 {
 						delete(h.Rooms, client.DocID)
 					}
@@ -166,4 +200,30 @@ func (h *Hub) Run() {
 			telemetry.ActiveConnections.WithLabelValues(client.DocID.String()).Dec()
 		}
 	}
+}
+
+// Stop signals the hub to stop. Safe to call multiple times. It blocks until
+// the run loop exits and the save queue has been drained.
+func (h *Hub) Stop() {
+	h.stopOnce.Do(func() {
+		close(h.quit)
+	})
+	h.saverWg.Wait()
+}
+
+// shutdown is invoked by the run loop after it receives the quit signal. It
+// closes all live client sends and lets the saver drain the in-flight queue.
+func (h *Hub) shutdown() {
+	log.Println("Hub shutting down...")
+
+	h.Mutex.Lock()
+	for docID, clients := range h.Rooms {
+		for client := range clients {
+			client.CloseSend()
+		}
+		delete(h.Rooms, docID)
+	}
+	h.Mutex.Unlock()
+
+	close(h.saveQueue)
 }

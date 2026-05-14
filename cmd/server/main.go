@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"os/signal"
+	"syscall"
 
 	"go.uber.org/zap"
 
@@ -11,6 +14,15 @@ import (
 	"Go-CollabSpace/pkg/logger"
 )
 
+// Build metadata, injected at compile time via -ldflags:
+//
+//	go build -ldflags "-X main.version=v1.2.3 -X main.commit=abc123 -X main.buildDate=2026-01-01"
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -18,19 +30,23 @@ func main() {
 	}
 
 	logger.InitLogger(cfg.Server.Mode)
-	defer func(Log *zap.Logger) {
-		_ = Log.Sync()
-	}(logger.Log)
-
-	logger.Log.Info("Starting server", zap.Int("Port", cfg.Server.Port))
+	logger.Log.Info("Starting Go-CollabSpace",
+		zap.String("version", version),
+		zap.String("commit", commit),
+		zap.String("build_date", buildDate),
+		zap.String("mode", cfg.Server.Mode),
+	)
 
 	db, err := initialize.InitDB(cfg.Database)
 	if err != nil {
-		return
+		logger.Log.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
-	srv := server.NewServer(cfg, db)
-	if err := srv.Run(); err != nil {
-		logger.Log.Fatal("Failed", zap.Error(err))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	s := server.NewServer(cfg, db)
+	if err := s.Run(ctx); err != nil {
+		logger.Log.Fatal("Failed to run server", zap.Error(err))
 	}
 }

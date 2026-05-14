@@ -12,7 +12,6 @@ import (
 const (
 	authorizationHeaderKey  = "authorization"
 	authorizationTypeBearer = "Bearer"
-	authorizationPayloadKey = "authorization_payload"
 )
 
 func AuthMiddleware(tokenProvider token.ITokenProvider) gin.HandlerFunc {
@@ -47,7 +46,8 @@ func AuthMiddleware(tokenProvider token.ITokenProvider) gin.HandlerFunc {
 			return
 		}
 
-		ctx.Set(authorizationPayloadKey, payload)
+		ctx.Set(ContextKeyAuthPayload, payload)
+		ctx.Set(ContextKeyUserID, payload.UserID)
 		ctx.Next()
 	}
 }
