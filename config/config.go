@@ -1,7 +1,12 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +29,10 @@ type Config struct {
 type ServerConfig struct {
 	Port int    `yaml:"port" env:"PORT" env-default:"8080" validate:"required"`
 	Mode string `yaml:"mode" env:"MODE" env-default:"development" validate:"required"`
+	// AllowedOrigins is the comma-separated list of origins permitted for both
+	// CORS and WebSocket Origin checks. Example:
+	//   ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+	AllowedOrigins []string `yaml:"allowedOrigins" env:"ALLOWED_ORIGINS" env-separator:"," env-default:"http://localhost:3000,http://localhost:3001"`
 }
 
 type DBConfig struct {
@@ -87,21 +96,60 @@ func LoadConfig() (*Config, error) {
 
 		_ = godotenv.Load()
 
-		err = cleanenv.ReadConfig("./config/config.dev.yml", cfg)
-		if err != nil {
-			fmt.Println("Config file not found, trying environment variables:", err)
+		path := resolveConfigPath()
+		if path != "" {
+			if readErr := cleanenv.ReadConfig(path, cfg); readErr != nil {
+				err = fmt.Errorf("failed to read config %q: %w", path, readErr)
+				return
+			}
+		} else {
 			if envErr := cleanenv.ReadEnv(cfg); envErr != nil {
-				err = envErr
+				err = fmt.Errorf("failed to read env config: %w", envErr)
 				return
 			}
 		}
 
 		validate := validator.New()
 		if validateErr := validate.Struct(cfg); validateErr != nil {
-			err = fmt.Errorf("config validation failed :%w", validateErr)
+			err = fmt.Errorf("config validation failed: %w", validateErr)
 			return
 		}
 	})
 
 	return cfg, err
+}
+
+// resolveConfigPath picks the YAML file to read. Returns "" when no file is
+// available, signalling that the caller should fall back to env-only loading.
+func resolveConfigPath() string {
+	if explicit := strings.TrimSpace(os.Getenv("CONFIG_PATH")); explicit != "" {
+		if fileExists(explicit) {
+			return explicit
+		}
+		fmt.Fprintf(os.Stderr, "CONFIG_PATH=%q not found, falling back to environment variables\n", explicit)
+		return ""
+	}
+
+	mode := strings.TrimSpace(os.Getenv("MODE"))
+	if mode == "" {
+		mode = "development"
+	}
+	candidate := filepath.Join("config", fmt.Sprintf("config.%s.yml", mode))
+	if fileExists(candidate) {
+		return candidate
+	}
+
+	return ""
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+		fmt.Fprintf(os.Stderr, "config stat %q: %v\n", path, err)
+		return true
+	}
+	return !info.IsDir()
 }

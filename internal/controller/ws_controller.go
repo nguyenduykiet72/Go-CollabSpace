@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"Go-CollabSpace/internal/common/token"
-	"Go-CollabSpace/internal/realtime"
 	"log"
 	"net/http"
 
@@ -10,27 +8,49 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
-)
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins (tighten in production)
-	},
-}
+	"Go-CollabSpace/internal/common/token"
+	"Go-CollabSpace/internal/realtime"
+)
 
 type WsController struct {
 	Hub           *realtime.Hub
 	TokenProvider token.ITokenProvider
 	DB            *gorm.DB
+
+	upgrader websocket.Upgrader
 }
 
-func NewWsController(hub *realtime.Hub, tokenProvider token.ITokenProvider, db *gorm.DB) *WsController {
+// NewWsController builds a controller whose Upgrader rejects any Origin not in
+// allowedOrigins. An empty allowedOrigins list disables the Origin check (for
+// non-browser clients / development); prefer passing the configured allow-list
+// in production.
+func NewWsController(hub *realtime.Hub, tokenProvider token.ITokenProvider, db *gorm.DB, allowedOrigins []string) *WsController {
+	originSet := make(map[string]struct{}, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		if o != "" {
+			originSet[o] = struct{}{}
+		}
+	}
+
 	return &WsController{
 		Hub:           hub,
 		TokenProvider: tokenProvider,
 		DB:            db,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					// Non-browser client (e.g. CLI tools); allow if no list is
+					// configured, otherwise reject.
+					return len(originSet) == 0
+				}
+				_, ok := originSet[origin]
+				return ok
+			},
+		},
 	}
 }
 
@@ -68,33 +88,35 @@ func (c *WsController) HandleWS(ctx *gin.Context) {
 	}
 
 	var roleID uint
-	result := c.DB.Table("tbl_workspace_members").
+	result := c.DB.WithContext(ctx.Request.Context()).
+		Table("tbl_workspace_members").
 		Select("tbl_workspace_members.wpm_role_id").
 		Joins("JOIN tbl_documents ON tbl_documents.doc_workspace_id = tbl_workspace_members.wpm_workspace_id").
-		Where("tbl_documents.doc_id = ? AND tbl_workspace_members.wpm_user_id", docID, claims.UserID).
+		Where("tbl_documents.doc_id = ? AND tbl_workspace_members.wpm_user_id = ?", docID, claims.UserID).
 		Take(&roleID)
 
 	if result.Error != nil {
-		log.Printf("Error in WebSocket handler: %v", result.Error)
-		ctx.JSON(403, gin.H{"error": "Access Denied: You do not have permission to access this document"})
+		log.Printf("WebSocket access check failed for user=%s doc=%s: %v", claims.UserID, docID, result.Error)
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "Access Denied: You do not have permission to access this document"})
 		return
 	}
 
 	// --- Upgrade to WebSocket ---
 	// gorilla/websocket hijacks BEFORE writing headers, bypassing Gin entirely.
-	conn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
+	conn, err := c.upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
 		log.Printf("WebSocket Upgrade failed: %v", err)
 		return
 	}
 
-	log.Printf("WebSocket connected: user=%s doc=%s", claims.UserID, docID)
+	log.Printf("WebSocket connected: user=%s doc=%s role=%d", claims.UserID, docID, roleID)
 
 	client := &realtime.Client{
 		Hub:    c.Hub,
 		Conn:   conn,
 		UserID: claims.UserID,
 		DocID:  docID,
+		RoleID: roleID,
 		Send:   make(chan []byte, 256),
 	}
 

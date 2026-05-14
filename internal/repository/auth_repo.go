@@ -1,12 +1,15 @@
 package repository
 
 import (
-	"Go-CollabSpace/internal/model"
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/model"
 )
 
 type AuthRepository struct {
@@ -26,13 +29,16 @@ func (a *AuthRepository) CreatePasswordReset(ctx context.Context, reset *model.P
 func (a *AuthRepository) FindValidPasswordReset(ctx context.Context, tokenHash string) (*model.PasswordReset, error) {
 	var resetData model.PasswordReset
 
-	err := a.db.WithContext(ctx).
+	err := a.getDB(ctx).
 		Where("pass_token_hash = ?", tokenHash).
 		Where("pass_is_used = ?", false).
 		Where("pass_expire_at > ?", time.Now()).
 		First(&resetData).Error
 
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -40,7 +46,7 @@ func (a *AuthRepository) FindValidPasswordReset(ctx context.Context, tokenHash s
 }
 
 func (a *AuthRepository) MarkTokenAsUsed(ctx context.Context, resetID uuid.UUID) error {
-	return a.db.WithContext(ctx).
+	return a.getDB(ctx).
 		Model(&model.PasswordReset{}).
 		Where("pass_id = ?", resetID).
 		Update("pass_is_used", true).Error

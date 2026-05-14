@@ -120,13 +120,17 @@ func (r *DocumentRepository) GetDocTreeFlat(ctx context.Context, workspaceID uui
 	return nodes, nil
 }
 
+// IsDescendant returns true if candidateID is a descendant (in the subtree) of docID.
+// Used to prevent cycles when re-parenting a document: moving docID under one of its own
+// descendants would form a loop.
 func (r *DocumentRepository) IsDescendant(ctx context.Context, docID, candidateID uuid.UUID) (bool, error) {
-	query := `
-		WITH RECURSIVE ancestors AS (
+	const query = `
+		WITH RECURSIVE subtree AS (
 			SELECT doc_id
 			FROM tbl_documents
 			WHERE doc_id = ?
 				AND doc_deleted_at IS NULL
+
 			UNION ALL
 
 			SELECT d.doc_id
@@ -138,11 +142,9 @@ func (r *DocumentRepository) IsDescendant(ctx context.Context, docID, candidateI
 	`
 
 	var exists bool
-
 	if err := r.db.WithContext(ctx).Raw(query, docID, candidateID).Scan(&exists).Error; err != nil {
 		return false, err
 	}
-
 	return exists, nil
 }
 
@@ -173,11 +175,11 @@ func (r *DocumentRepository) Search(ctx context.Context, keyword string,
 			WHERE d.doc_workspace_id = ?
 			LIMIT 50
 		)
-		SELECT dc.*, COALESCE(1.0 / (60 + ts.rank), 0.0) + COALESCE(1.0 / (60 + ss.rank), 0.0) as rrf_score
+		SELECT dc.*, COALESCE(1.0 / (60 + ts.rank), 0.0) + COALESCE(1.0 / (60 + ss.rank), 0.0) AS rrf_score
 		FROM tbl_document_chunks dc
 		LEFT JOIN dock_text_search ts ON ts.dock_id = dc.dock_id
 		LEFT JOIN semantic_search ss ON ss.dock_id = dc.dock_id
-		WHERE ts.dock_id IS NOT NULL OR ss.chunk_id IS NOT NULL
+		WHERE ts.dock_id IS NOT NULL OR ss.dock_id IS NOT NULL
 		ORDER BY rrf_score DESC
 		LIMIT ?
 	`

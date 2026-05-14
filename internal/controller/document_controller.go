@@ -121,7 +121,11 @@ func (c *DocumentController) GetDocTree(ctx *gin.Context) {
 		return
 	}
 
-	userID := ctx.MustGet("userID").(uuid.UUID) // jwt middleware
+	userID, err := c.getUserIDFromContext(ctx)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrUnauthorized)
+		return
+	}
 
 	tree, err := c.documentService.GetDocTree(ctx.Request.Context(), workspaceID, userID)
 	if err != nil {
@@ -145,7 +149,11 @@ func (c *DocumentController) MoveDoc(ctx *gin.Context) {
 		return
 	}
 
-	userID := ctx.MustGet("userID").(uuid.UUID) // jwt middleware
+	userID, err := c.getUserIDFromContext(ctx)
+	if err != nil {
+		_ = ctx.Error(apperror.ErrUnauthorized)
+		return
+	}
 
 	if err := c.documentService.MoveDoc(ctx.Request.Context(), docID, req, userID); err != nil {
 		_ = ctx.Error(apperror.ErrBadRequest)

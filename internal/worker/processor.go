@@ -13,6 +13,7 @@ import (
 
 type TaskProcessor interface {
 	Start() error
+	Shutdown()
 	ProcessTaskUpdateSearchIndex(ctx context.Context, task *asynq.Task) error
 	ProcessTaskSendResetEmail(ctx context.Context, task *asynq.Task) error
 }
@@ -42,6 +43,10 @@ func (processor *RedisTaskProcessor) Start() error {
 	mux.HandleFunc(TaskUpdateSearchIndex, processor.ProcessTaskUpdateSearchIndex)
 	mux.HandleFunc(TaskSendResetEmail, processor.ProcessTaskSendResetEmail)
 	return processor.server.Start(mux)
+}
+
+func (processor *RedisTaskProcessor) Shutdown() {
+	processor.server.Shutdown()
 }
 
 func (processor *RedisTaskProcessor) ProcessTaskUpdateSearchIndex(ctx context.Context, task *asynq.Task) error {
