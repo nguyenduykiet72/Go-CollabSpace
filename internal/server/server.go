@@ -58,7 +58,7 @@ func (s *Server) InitEngine() {
 
 	redisClient, err := infrastructure.NewRedisClient(s.cfg.Redis)
 	if err != nil {
-		logger.Log.Fatal("Failed to connect to Redis", zap.Error(err))
+		logger.Log.Info("Failed to connect to Redis", zap.Error(err))
 	}
 	s.redisClient = redisClient
 
