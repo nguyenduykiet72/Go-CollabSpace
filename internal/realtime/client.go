@@ -1,12 +1,14 @@
 package realtime
 
 import (
-	"Go-CollabSpace/internal/constant"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+
+	"Go-CollabSpace/internal/constant"
 )
 
 const (
@@ -23,6 +25,16 @@ type Client struct {
 	DocID  uuid.UUID
 	RoleID uint
 	Send   chan []byte // Outgoing message channel
+
+	closeOnce sync.Once
+}
+
+// CloseSend closes the Send channel exactly once. Safe to call from multiple
+// goroutines (hub eviction, shutdown, etc.).
+func (c *Client) CloseSend() {
+	c.closeOnce.Do(func() {
+		close(c.Send)
+	})
 }
 
 func (c *Client) WriteLoop() {
@@ -51,7 +63,12 @@ func (c *Client) WriteLoop() {
 
 func (c *Client) ReadLoop() {
 	defer func() {
-		c.Hub.Unregister <- c
+		// Best-effort unregister; if the hub is shutting down its run loop will no
+		// longer drain Unregister, so don't block on it.
+		select {
+		case c.Hub.Unregister <- c:
+		case <-c.Hub.quit:
+		}
 		c.Conn.Close()
 	}()
 
@@ -70,16 +87,24 @@ func (c *Client) ReadLoop() {
 		if msgType == websocket.BinaryMessage && len(msg) > 0 {
 			yjsMsgType := msg[0]
 
-			if c.RoleID == constant.RoleViewer && yjsMsgType == 0 {
-				log.Printf("SECURITY ALERT: Viewer %s attempted to send a Sync Update to Doc %s. Packet dropped.", c.UserID, c.DocID)
+			if c.RoleID >= constant.RoleViewer && yjsMsgType == MessageSync {
+				log.Printf("SECURITY ALERT: Viewer %s attempted to send a Sync message to Doc %s. Packet dropped.", c.UserID, c.DocID)
 				continue
 			}
+
+			// Persist only real Sync Update payloads. Awareness/SyncStep messages are relay-only.
+			saveToDB := false
+			if yjsMsgType == MessageSync && len(msg) >= 2 && msg[1] == SyncUpdate {
+				saveToDB = true
+			}
+
 			// Pure relay: forward every binary message to all other clients in the same doc room.
 			// y-websocket clients handle the Yjs protocol (SyncStep1/2, Updates, Awareness) themselves.
 			c.Hub.Broadcast <- &BroadcastMessage{
 				DocID:    c.DocID,
 				Payload:  msg,
 				SenderId: c.UserID,
+				SaveToDB: saveToDB,
 			}
 		}
 	}

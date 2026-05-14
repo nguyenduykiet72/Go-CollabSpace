@@ -28,7 +28,7 @@ func (u *UserRepository) CreateUser(ctx context.Context, user *model.User) error
 
 func (u *UserRepository) GetAllUsers(ctx context.Context, req dto.PaginationReq) ([]*model.User, error) {
 	var users []*model.User
-	err := u.db.WithContext(ctx).
+	err := u.getDB(ctx).
 		Select("user_id", "user_email", "user_full_name", "user_avatar", "user_status", "user_created_at").
 		Limit(req.GetLimit()).
 		Offset(req.GetOffset()).
@@ -42,7 +42,7 @@ func (u *UserRepository) GetAllUsers(ctx context.Context, req dto.PaginationReq)
 
 func (u *UserRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
-	err := u.db.WithContext(ctx).Where("user_email = ?", email).First(&user).Error
+	err := u.getDB(ctx).Where("user_email = ?", email).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, apperror.ErrNotFound
@@ -55,7 +55,7 @@ func (u *UserRepository) GetUserByEmail(ctx context.Context, email string) (*mod
 
 func (u *UserRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	var user model.User
-	err := u.db.WithContext(ctx).First(&user, "user_id = ?", id).Error
+	err := u.getDB(ctx).First(&user, "user_id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -67,11 +67,29 @@ func (u *UserRepository) CreateSession(ctx context.Context, session *model.Sessi
 }
 
 func (u *UserRepository) RevokeSession(ctx context.Context, id uuid.UUID) error {
-	return u.db.WithContext(ctx).Model(&model.Session{}).Where("sess_id = ?", id).Update("sess_is_blocked", true).Error
+	return u.getDB(ctx).Model(&model.Session{}).Where("sess_id = ?", id).Update("sess_is_blocked", true).Error
+}
+
+// FindActiveSessionByRefreshHash returns the non-blocked, non-expired session
+// matching the given hashed refresh token, if any.
+func (u *UserRepository) FindActiveSessionByRefreshHash(ctx context.Context, tokenHash string) (*model.Session, error) {
+	var session model.Session
+	err := u.getDB(ctx).
+		Where("sess_refresh_token = ?", tokenHash).
+		Where("sess_is_blocked = ?", false).
+		Where("sess_expire_at > NOW()").
+		First(&session).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrNotFound
+		}
+		return nil, err
+	}
+	return &session, nil
 }
 
 func (u *UserRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUID, newHashedPassword string) error {
-	result := u.db.WithContext(ctx).
+	result := u.getDB(ctx).
 		Model(&model.User{}).
 		Where("user_id = ?", userID).
 		Update("user_password", newHashedPassword)
@@ -94,7 +112,7 @@ func (u *UserRepository) UpdateSocialAuth(ctx context.Context, userID uuid.UUID,
 		"user_avatar":   avatar,
 	}
 
-	result := u.db.WithContext(ctx).
+	result := u.getDB(ctx).
 		Model(&model.User{}).
 		Where("user_id = ?", userID).
 		Updates(updates)

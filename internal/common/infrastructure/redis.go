@@ -41,3 +41,8 @@ func (r *RedisClient) Set(ctx context.Context, key string, value interface{}, tt
 func (r *RedisClient) Get(ctx context.Context, key string) (string, error) {
 	return r.Client.Get(ctx, key).Result()
 }
+
+// Close releases all Redis connections held by this client.
+func (r *RedisClient) Close() error {
+	return r.Client.Close()
+}

@@ -19,10 +19,9 @@ func NewJWTProvider(cfgToken ConfigToken) ITokenProvider {
 	return &jwtProvider{cfgToken: cfgToken}
 }
 
-func (j *jwtProvider) GenerateAccessToken(userID uuid.UUID, role string) (string, error) {
+func (j *jwtProvider) GenerateAccessToken(userID uuid.UUID) (string, error) {
 	claims := &UserClaims{
 		UserID: userID,
-		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(j.cfgToken.AccessTokenDuration)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

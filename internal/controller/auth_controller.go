@@ -14,6 +14,7 @@ import (
 type AuthUseCase interface {
 	Register(ctx context.Context, req dto.RegisterRequest) (*dto.UserResponse, error)
 	Login(ctx context.Context, req dto.LoginRequest, userAgent string) (*dto.TokenResponse, error)
+	Refresh(ctx context.Context, refreshToken string, userAgent string) (*dto.TokenResponse, error)
 	ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error
 	ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error
 	LoginWithSocial(ctx context.Context, providerName string, code string, userAgent string) (*dto.TokenResponse, error)
@@ -64,6 +65,27 @@ func (a *AuthController) Login(ctx *gin.Context) {
 	}
 
 	httpx.WriteJSON(ctx, http.StatusOK, tokenResp, "Login successful")
+}
+
+func (a *AuthController) Refresh(ctx *gin.Context) {
+	var req dto.RefreshTokenRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		_ = ctx.Error(apperror.ErrBadRequest)
+		return
+	}
+
+	userAgent := ctx.GetHeader("User-Agent")
+	if userAgent == "" {
+		userAgent = "unknown"
+	}
+
+	tokenResp, err := a.authService.Refresh(ctx.Request.Context(), req.RefreshToken, userAgent)
+	if err != nil {
+		_ = ctx.Error(err)
+		return
+	}
+
+	httpx.WriteJSON(ctx, http.StatusOK, tokenResp, "Token refreshed successfully")
 }
 
 func (a *AuthController) ForgotPassword(ctx *gin.Context) {

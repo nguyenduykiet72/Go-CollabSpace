@@ -1,25 +1,25 @@
 package middleware
 
 import (
-	"Go-CollabSpace/internal/model"
-	"Go-CollabSpace/pkg/httpx"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"Go-CollabSpace/internal/model"
+	"Go-CollabSpace/pkg/httpx"
 )
 
 func RequireWorkSpaceRole(db *gorm.DB, requiredRole uint) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		userIDVal, exits := ctx.Get("user_id")
-		if !exits {
+		userID, err := GetUserID(ctx)
+		if err != nil {
 			httpx.WriteJSON(ctx, http.StatusUnauthorized, nil, "Unauthorized")
 			ctx.Abort()
 			return
 		}
-
-		userID := userIDVal.(uuid.UUID)
 
 		workspaceIDStr := ctx.Param("workspaceId")
 		workspaceID, err := uuid.Parse(workspaceIDStr)
@@ -30,12 +30,13 @@ func RequireWorkSpaceRole(db *gorm.DB, requiredRole uint) gin.HandlerFunc {
 		}
 
 		var member model.WorkspaceMember
-		err = db.Select("wpm_role_id").
+		err = db.WithContext(ctx.Request.Context()).
+			Select("wpm_role_id").
 			Where("wpm_workspace_id = ? AND wpm_user_id = ?", workspaceID, userID).
 			First(&member).Error
 
 		if err != nil {
-			if err == gorm.ErrRecordNotFound {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				httpx.WriteJSON(ctx, http.StatusForbidden, nil, "Forbidden: You are not a member of this workspace")
 				ctx.Abort()
 				return

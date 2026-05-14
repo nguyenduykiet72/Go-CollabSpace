@@ -1,19 +1,22 @@
 package service
 
 import (
-	"Go-CollabSpace/internal/common/apperror"
-	"Go-CollabSpace/internal/common/infrastructure"
-	"Go-CollabSpace/internal/dto"
-	"Go-CollabSpace/internal/model"
-	"Go-CollabSpace/internal/worker"
-	"Go-CollabSpace/pkg/hash"
 	"context"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
+
+	"Go-CollabSpace/internal/common/apperror"
+	"Go-CollabSpace/internal/common/infrastructure"
+	"Go-CollabSpace/internal/dto"
+	"Go-CollabSpace/internal/model"
+	"Go-CollabSpace/internal/worker"
+	"Go-CollabSpace/pkg/hash"
+	"Go-CollabSpace/pkg/logger"
 )
 
 type AuthRepo interface {
@@ -26,12 +29,14 @@ type UserAuthRepo interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	CreateUser(ctx context.Context, user *model.User) error
 	CreateSession(ctx context.Context, session *model.Session) error
+	RevokeSession(ctx context.Context, sessionID uuid.UUID) error
+	FindActiveSessionByRefreshHash(ctx context.Context, tokenHash string) (*model.Session, error)
 	UpdateUserPassword(ctx context.Context, userID uuid.UUID, newHashedPassword string) error
 	UpdateSocialAuth(ctx context.Context, userID uuid.UUID, provider string, socialID string, avatar string) error
 }
 
 type TokenProvider interface {
-	GenerateAccessToken(userId uuid.UUID, role string) (string, error)
+	GenerateAccessToken(userID uuid.UUID) (string, error)
 	GenerateRefreshToken() (string, error)
 }
 
@@ -105,41 +110,88 @@ func (a *AuthService) Login(ctx context.Context, req dto.LoginRequest, userAgent
 		return nil, invalidCredErr
 	}
 
-	accessToken, err := a.tokenProvider.GenerateAccessToken(user.UserID, "Viewer")
+	return a.issueTokensTx(ctx, user.UserID, userAgent)
+}
+
+// generateTokenPair generates a fresh access + refresh token pair without
+// touching the database.
+func (a *AuthService) generateTokenPair(userID uuid.UUID) (accessToken, refreshToken string, err error) {
+	accessToken, err = a.tokenProvider.GenerateAccessToken(userID)
 	if err != nil {
-		return nil, apperror.ErrInternal.WithRootErr(err)
+		return "", "", apperror.ErrInternal.WithRootErr(err)
 	}
-
-	refreshToken, err := a.tokenProvider.GenerateRefreshToken()
+	refreshToken, err = a.tokenProvider.GenerateRefreshToken()
 	if err != nil {
-		return nil, apperror.ErrInternal.WithRootErr(err)
+		return "", "", apperror.ErrInternal.WithRootErr(err)
 	}
+	return accessToken, refreshToken, nil
+}
 
-	refreshTokenTTL := 7 * 24 * time.Hour
+// persistSession stores a hashed refresh token for the given user. The caller
+// owns the transaction (use ctx scoped by Transactor.WithinTransaction).
+func (a *AuthService) persistSession(ctx context.Context, userID uuid.UUID, refreshToken, userAgent string) error {
+	const refreshTokenTTL = 7 * 24 * time.Hour
+	session := &model.Session{
+		SessUserID:       userID,
+		SessRefreshToken: hash.HashToken(refreshToken),
+		SessUserAgent:    userAgent,
+		SessExpireAt:     time.Now().Add(refreshTokenTTL),
+	}
+	if err := a.userRepo.CreateSession(ctx, session); err != nil {
+		return apperror.ErrInternal.WithRootErr(err)
+	}
+	return nil
+}
 
+// issueTokensTx generates a token pair and persists the session inside a new
+// transaction.
+func (a *AuthService) issueTokensTx(ctx context.Context, userID uuid.UUID, userAgent string) (*dto.TokenResponse, error) {
+	accessToken, refreshToken, err := a.generateTokenPair(userID)
+	if err != nil {
+		return nil, err
+	}
 	err = a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
-		session := &model.Session{
-			SessUserID:       user.UserID,
-			SessRefreshToken: refreshToken,
-			SessUserAgent:    userAgent,
-			SessExpireAt:     time.Now().Add(refreshTokenTTL),
-		}
-
-		if err := a.userRepo.CreateSession(txCtx, session); err != nil {
-			return apperror.ErrInternal.WithRootErr(err)
-		}
-
-		return nil
+		return a.persistSession(txCtx, userID, refreshToken, userAgent)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &dto.TokenResponse{AccessToken: accessToken, RefreshToken: refreshToken}, nil
+}
 
+// Refresh validates the supplied refresh token, rotates it (revokes the old
+// session, issues a new one) and returns a fresh token pair. Re-use of an old
+// or unknown refresh token returns ErrInvalidToken.
+func (a *AuthService) Refresh(ctx context.Context, refreshToken, userAgent string) (*dto.TokenResponse, error) {
+	if refreshToken == "" {
+		return nil, apperror.ErrInvalidToken
+	}
+
+	tokenHash := hash.HashToken(refreshToken)
+	session, err := a.userRepo.FindActiveSessionByRefreshHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, apperror.ErrNotFound) {
+			return nil, apperror.ErrInvalidToken
+		}
+		return nil, err
+	}
+
+	newAccess, newRefresh, err := a.generateTokenPair(session.SessUserID)
 	if err != nil {
 		return nil, err
 	}
 
-	return &dto.TokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}, nil
+	err = a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
+		if err := a.userRepo.RevokeSession(txCtx, session.SessID); err != nil {
+			return apperror.ErrInternal.WithRootErr(err)
+		}
+		return a.persistSession(txCtx, session.SessUserID, newRefresh, userAgent)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.TokenResponse{AccessToken: newAccess, RefreshToken: newRefresh}, nil
 }
 
 func (a *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPasswordRequest) error {
@@ -169,7 +221,15 @@ func (a *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPassword
 		ResetToken: rawToken,
 	}
 
-	_ = a.taskDistributor.DistributeTaskSendResetEmail(ctx, payload)
+	// We intentionally don't surface enqueue errors to the caller (timing-attack
+	// safe: callers should not learn whether the email exists). However we log
+	// them so operators can spot a broken queue.
+	if err := a.taskDistributor.DistributeTaskSendResetEmail(ctx, payload); err != nil {
+		logger.Log.Error("failed to enqueue reset email task",
+			zap.String("email", dto.Email),
+			zap.Error(err),
+		)
+	}
 
 	return nil
 }
@@ -185,9 +245,12 @@ func (a *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordRe
 		return err
 	}
 
-	return a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
-		hashedPwd, _ := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return apperror.ErrInternal.WithRootErr(err)
+	}
 
+	return a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
 		if err := a.userRepo.UpdateUserPassword(txCtx, resetData.PassUserID, string(hashedPwd)); err != nil {
 			return err
 		}
@@ -216,33 +279,7 @@ func (a *AuthService) LoginWithSocial(ctx context.Context, providerName string, 
 		return nil, err
 	}
 
-	accessToken, _ := a.tokenProvider.GenerateAccessToken(user.UserID, "Viewer")
-	refreshToken, _ := a.tokenProvider.GenerateRefreshToken()
-	refreshTokenTTL := 7 * 24 * time.Hour
-
-	err = a.transactor.WithinTransaction(ctx, func(txCtx context.Context) error {
-		session := &model.Session{
-			SessUserID:       user.UserID,
-			SessRefreshToken: refreshToken,
-			SessUserAgent:    userAgent,
-			SessExpireAt:     time.Now().Add(refreshTokenTTL),
-		}
-
-		if err := a.userRepo.CreateSession(txCtx, session); err != nil {
-			return apperror.ErrInternal.WithRootErr(err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &dto.TokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}, nil
+	return a.issueTokensTx(ctx, user.UserID, userAgent)
 }
 
 func (a *AuthService) resolveSocialUser(ctx context.Context, profile *infrastructure.SocialProfile, providerName string) (*model.User, error) {
@@ -270,10 +307,19 @@ func (a *AuthService) resolveSocialUser(ctx context.Context, profile *infrastruc
 		*existingUser.SocialID != profile.ID
 
 	if needUpdate {
-		_ = a.userRepo.UpdateSocialAuth(ctx, existingUser.UserID, providerName, profile.ID, profile.Avatar)
-		existingUser.AuthProvider = providerName
-		existingUser.SocialID = &profile.ID
-		existingUser.UserAvatar = profile.Avatar
+		if err := a.userRepo.UpdateSocialAuth(ctx, existingUser.UserID, providerName, profile.ID, profile.Avatar); err != nil {
+			// Login can still proceed with the stale profile, but log so we can
+			// reconcile later.
+			logger.Log.Warn("failed to refresh social auth on login",
+				zap.String("user_id", existingUser.UserID.String()),
+				zap.String("provider", providerName),
+				zap.Error(err),
+			)
+		} else {
+			existingUser.AuthProvider = providerName
+			existingUser.SocialID = &profile.ID
+			existingUser.UserAvatar = profile.Avatar
+		}
 	}
 
 	return existingUser, nil

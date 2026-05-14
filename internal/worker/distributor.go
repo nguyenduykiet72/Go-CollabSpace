@@ -27,6 +27,7 @@ type PayloadSendResetEmail struct {
 type TaskDistributor interface {
 	DistributeTaskUpdateSearchIndex(ctx context.Context, payload *PayloadUpdateSearchIndex, opts ...asynq.Option) error
 	DistributeTaskSendResetEmail(ctx context.Context, payload *PayloadSendResetEmail, opts ...asynq.Option) error
+	Close() error
 }
 
 type RedisTaskDistributor struct {
@@ -36,6 +37,11 @@ type RedisTaskDistributor struct {
 func NewRedisTaskDistributor(redisOpt asynq.RedisClientOpt) TaskDistributor {
 	client := asynq.NewClient(redisOpt)
 	return &RedisTaskDistributor{client: client}
+}
+
+// Close releases the underlying Asynq client connection pool.
+func (d *RedisTaskDistributor) Close() error {
+	return d.client.Close()
 }
 
 func (d *RedisTaskDistributor) DistributeTaskUpdateSearchIndex(ctx context.Context, payload *PayloadUpdateSearchIndex, opts ...asynq.Option) error {
