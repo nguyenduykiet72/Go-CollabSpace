@@ -8,7 +8,7 @@ export const Label = forwardRef<
   return (
     <label
       ref={ref}
-      className={cn("text-sm font-medium text-zinc-700", className)}
+      className={cn("text-sm font-medium text-slate-700", className)}
       {...props}
     />
   );

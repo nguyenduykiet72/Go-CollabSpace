@@ -22,13 +22,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const base =
-      "inline-flex items-center justify-center gap-2 font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed";
+      "inline-flex items-center justify-center gap-2 rounded-md font-medium tracking-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
     const variants = {
-      default: "bg-zinc-900 text-white hover:bg-zinc-700",
+      default: "bg-slate-950 text-white shadow-sm hover:bg-slate-800",
       outline:
-        "border border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50",
-      ghost: "text-zinc-700 hover:bg-zinc-100",
+        "border border-slate-300 bg-white text-slate-900 shadow-sm hover:bg-slate-50",
+      ghost: "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
       destructive: "bg-red-600 text-white hover:bg-red-700",
     };
 

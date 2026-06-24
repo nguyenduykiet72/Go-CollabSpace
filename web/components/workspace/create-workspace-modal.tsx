@@ -37,16 +37,12 @@ export function CreateWorkspaceModal() {
     register,
     handleSubmit,
     reset,
-    watch,
     setValue,
     setError,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
   });
-
-  // Auto-generate slug from name
-  const nameValue = watch("name", "");
 
   function handleNameChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value;
@@ -97,23 +93,23 @@ export function CreateWorkspaceModal() {
           </FormField>
 
           <FormField label="Slug (URL)" error={errors.slug?.message} required>
-            <div className="flex items-center gap-0 rounded-md border border-zinc-300 focus-within:ring-2 focus-within:ring-zinc-900 overflow-hidden">
-              <span className="px-3 py-2 text-sm text-zinc-400 bg-zinc-50 border-r border-zinc-200 shrink-0">
+            <div className="flex items-center gap-0 overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
+              <span className="shrink-0 border-r border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
                 /workspace/
               </span>
               <input
-                className="flex-1 px-3 py-2 text-sm outline-none bg-white text-zinc-900"
+                className="min-w-0 flex-1 bg-white px-3 py-2 text-sm text-slate-950 outline-none placeholder:text-slate-400"
                 placeholder="my-team"
                 {...register("slug")}
               />
             </div>
             {errors.slug && (
-              <p className="text-xs text-red-500">{errors.slug.message}</p>
+              <p className="text-xs text-red-600">{errors.slug.message}</p>
             )}
           </FormField>
 
           {errors.root && (
-            <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {errors.root.message}
             </p>
           )}

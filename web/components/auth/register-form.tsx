@@ -77,7 +77,7 @@ export function RegisterForm() {
       </FormField>
 
       {errors.root && (
-        <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {errors.root.message}
         </p>
       )}
@@ -91,11 +91,11 @@ export function RegisterForm() {
         Create account
       </Button>
 
-      <p className="text-center text-sm text-zinc-500">
+      <p className="text-center text-sm text-slate-500">
         Already have an account?{" "}
         <Link
           href="/login"
-          className="font-medium text-zinc-900 hover:underline"
+          className="font-medium text-slate-950 hover:text-blue-700"
         >
           Sign in
         </Link>

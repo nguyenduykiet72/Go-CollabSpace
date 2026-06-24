@@ -13,10 +13,10 @@ export function Badge({
   className,
 }: BadgeProps) {
   const variants = {
-    default: "bg-zinc-900 text-white",
-    muted: "bg-zinc-100 text-zinc-600",
-    success: "bg-emerald-100 text-emerald-700",
-    warning: "bg-amber-100 text-amber-700",
+    default: "bg-slate-950 text-white",
+    muted: "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200",
+    success: "bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-200",
+    warning: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200",
   };
 
   return (

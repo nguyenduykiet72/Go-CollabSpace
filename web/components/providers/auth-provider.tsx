@@ -4,7 +4,6 @@ import {
   createContext,
   useContext,
   useState,
-  useEffect,
   type ReactNode,
 } from "react";
 import type { UserResponse } from "@/lib/types";
@@ -31,20 +30,10 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUserState] = useState<UserResponse | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  useEffect(() => {
-    if (isAuthenticated()) {
-      const stored = getStoredUser();
-      if (stored) {
-        setUserState(stored);
-        setIsLoggedIn(true);
-      } else {
-        setIsLoggedIn(true);
-      }
-    }
-  }, []);
+  const [user, setUserState] = useState<UserResponse | null>(() =>
+    isAuthenticated() ? getStoredUser() : null
+  );
+  const [isLoggedIn, setIsLoggedIn] = useState(() => isAuthenticated());
 
   function login(
     accessToken: string,
