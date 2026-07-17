@@ -51,6 +51,7 @@ help:
 	@echo "  docker-up        Start containers"
 	@echo "  docker-down      Stop containers"
 	@echo "  docker-logs      View logs"
+	@echo "  hooks            Install git hooks via lefthook"
 
 # ==============================================================================
 # DEVELOPMENT
@@ -111,6 +112,11 @@ test-coverage:
 pre-commit: fmt lint test
 	@echo "All pre-commit checks passed!"
 
+.PHONY: hooks
+hooks:
+	@echo "🪝 Installing git hooks..."
+	@lefthook install
+	@echo "Git hooks installed!"
 # ==============================================================================
 # DATABASE MIGRATIONS (GOOSE)
 # ==============================================================================
@@ -177,6 +183,7 @@ install-tools:
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@go install github.com/pressly/goose/v3/cmd/goose@latest
+	@go install github.com/evilmartians/lefthook@latest
 	@echo "Tools installed!"
 
 .PHONY: verify-tools

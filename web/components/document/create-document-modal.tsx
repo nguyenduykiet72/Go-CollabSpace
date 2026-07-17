@@ -81,18 +81,19 @@ export function CreateDocumentModal({ workspaceId }: CreateDocumentModalProps) {
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
           {/* Emoji picker */}
           <div>
-            <p className="text-sm font-medium text-zinc-700 mb-2">Icon</p>
+            <p className="mb-2 text-sm font-medium text-slate-700">Icon</p>
             <div className="flex gap-2 flex-wrap">
               {EMOJIS.map((e) => (
                 <button
                   key={e}
                   type="button"
                   onClick={() => setSelectedEmoji(e)}
-                  className={`h-9 w-9 rounded-md text-xl flex items-center justify-center transition-colors ${
+                  className={`flex h-9 w-9 items-center justify-center rounded-md text-xl transition-colors ${
                     selectedEmoji === e
-                      ? "bg-zinc-900 ring-2 ring-zinc-900 ring-offset-1"
-                      : "bg-zinc-100 hover:bg-zinc-200"
+                      ? "bg-blue-50 ring-2 ring-blue-500 ring-offset-1"
+                      : "bg-slate-100 hover:bg-slate-200"
                   }`}
+                  aria-label={`Use ${e} icon`}
                 >
                   {e}
                 </button>
@@ -109,7 +110,7 @@ export function CreateDocumentModal({ workspaceId }: CreateDocumentModalProps) {
           </FormField>
 
           {errors.root && (
-            <p className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {errors.root.message}
             </p>
           )}

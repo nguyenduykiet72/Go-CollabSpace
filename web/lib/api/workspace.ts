@@ -2,7 +2,6 @@ import type {
   CreateWorkspaceRequest,
   WorkspaceResponse,
   AddMembersRequest,
-  WorkspaceMemberResponse,
   ApiResponse,
 } from "../types";
 import { apiClient } from "./client";

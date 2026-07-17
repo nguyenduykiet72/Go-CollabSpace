@@ -2,22 +2,23 @@ pre-commit:
   parallel: false
   commands:
     tidy:
-      files: git diff --cached --name-only HEAD
-      glob: "go.mod, go.sum"
+      glob: "go.{mod,sum}"
       run: go mod tidy && git add go.mod go.sum
     format:
-      glob: "*.go"
-      run: goimports -w {staged_files} && git add {staged_files}
+      glob: "**/*.go"
+      run: goimports -w {staged_files}
+      stage_fixed: true
     lint:
-      glob: "*.go"
-      run: golangci-lint run --new-from-rev HEAD ./...
+      glob: "**/*.go"
+      run: golangci-lint run ./...
 
 commit-msg:
   commands:
     validate-message:
       run: |
-        head -n1 {1} | grep -E "^(feat|fix|docs|style|refactor|perf|test|chore|revert)\(GCS-[0-9]+\): .+$"
-      errorMessage: |
-        Wrong commit message format.
-        Please use the Conventional Commits format:
-        <type>(<scope>): <subject>
+        head -n1 {1} | grep -qE "^(feat|fix|docs|style|refactor|perf|test|chore|revert)\(GCS-[0-9]+\): .+$"
+      fail_text: |
+        ✗ Wrong commit message format.
+        Use: <type>(GCS-NNN): <subject>
+        Example: feat(GCS-42): add user authentication endpoint
+        Types: feat|fix|docs|style|refactor|perf|test|chore|revert

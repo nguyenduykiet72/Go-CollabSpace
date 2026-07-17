@@ -10,7 +10,7 @@ export function Card({ className, children }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-lg border border-zinc-200 bg-white shadow-sm",
+        "rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/50",
         className
       )}
     >
@@ -21,7 +21,7 @@ export function Card({ className, children }: CardProps) {
 
 export function CardHeader({ className, children }: CardProps) {
   return (
-    <div className={cn("px-6 py-4 border-b border-zinc-100", className)}>
+    <div className={cn("border-b border-slate-100 px-6 py-4", className)}>
       {children}
     </div>
   );
@@ -29,7 +29,7 @@ export function CardHeader({ className, children }: CardProps) {
 
 export function CardTitle({ className, children }: CardProps) {
   return (
-    <h2 className={cn("text-lg font-semibold text-zinc-900", className)}>
+    <h2 className={cn("text-lg font-semibold text-slate-950", className)}>
       {children}
     </h2>
   );
@@ -37,7 +37,7 @@ export function CardTitle({ className, children }: CardProps) {
 
 export function CardDescription({ className, children }: CardProps) {
   return (
-    <p className={cn("text-sm text-zinc-500 mt-0.5", className)}>{children}</p>
+    <p className={cn("mt-0.5 text-sm text-slate-500", className)}>{children}</p>
   );
 }
 
@@ -49,7 +49,7 @@ export function CardFooter({ className, children }: CardProps) {
   return (
     <div
       className={cn(
-        "px-6 py-4 border-t border-zinc-100 bg-zinc-50/50 rounded-b-lg",
+        "rounded-b-lg border-t border-slate-100 bg-slate-50/80 px-6 py-4",
         className
       )}
     >

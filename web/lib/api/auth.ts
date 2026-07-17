@@ -6,6 +6,7 @@ import type {
   ApiResponse,
 } from "../types";
 import { apiClient } from "./client";
+import { isMockLogin, mockTokenResponse } from "../mock-auth";
 
 export async function register(
   data: RegisterRequest
@@ -20,6 +21,10 @@ export async function register(
 export async function login(
   data: LoginRequest
 ): Promise<ApiResponse<TokenResponse>> {
+  if (isMockLogin(data)) {
+    return mockTokenResponse();
+  }
+
   const res = await apiClient.post<ApiResponse<TokenResponse>>(
     "/auth/login",
     data
