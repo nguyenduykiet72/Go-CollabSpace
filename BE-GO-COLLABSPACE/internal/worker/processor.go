@@ -66,7 +66,7 @@ func (processor *RedisTaskProcessor) ProcessTaskSendResetEmail(ctx context.Conte
 		return fmt.Errorf("failed to unmarshal payload: %w", err)
 	}
 
-	err := processor.emailSender.SendResetPasswordEmail(payload.ToEmail, payload.ResetToken)
+	err := processor.emailSender.SendResetPasswordEmail(payload.ToEmail, payload.ResetURL)
 	if err != nil {
 		return fmt.Errorf("failed to send reset email: %w", err)
 	}

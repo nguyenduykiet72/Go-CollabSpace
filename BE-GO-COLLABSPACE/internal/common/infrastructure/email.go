@@ -6,7 +6,7 @@ import (
 )
 
 type EmailSender interface {
-	SendResetPasswordEmail(toEmail string, resetToken string) error
+	SendResetPasswordEmail(toEmail string, resetURL string) error
 }
 
 type SMTPEmailSender struct {
@@ -27,16 +27,14 @@ func NewSMTPEmailSender(host string, port int, username, password string, from s
 	}
 }
 
-func (s *SMTPEmailSender) SendResetPasswordEmail(toEmail string, resetToken string) error {
-	resetLink := fmt.Sprintf("http://localhost:3000/reset-password?token=%s", resetToken)
-
+func (s *SMTPEmailSender) SendResetPasswordEmail(toEmail string, resetURL string) error {
 	subject := "Subject: Password Reset Request\n"
 	mime := "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
 	body := fmt.Sprintf(`
 		<h2>Password Reset</h2>
 		<p>Click the link below to reset your password. It expires in 15 minutes.</p>
 		<a href="%s">Reset Password</a>
-	`, resetLink)
+	`, resetURL)
 
 	msg := []byte(subject + mime + body)
 

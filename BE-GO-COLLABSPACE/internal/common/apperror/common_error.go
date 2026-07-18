@@ -21,6 +21,7 @@ var (
 	ErrUnsupportedFileType = NewAppError(http.StatusBadRequest, "Unsupported file type", "UNSUPPORTED_FILE_TYPE")
 	ErrFileTooLarge        = NewAppError(http.StatusBadRequest, "File size exceeds the limit (5MB)", "FILE_TOO_LARGE")
 	ErrInvalidToken        = NewAppError(http.StatusUnauthorized, "Invalid token", "INVALID_TOKEN")
+	ErrReturnURLNotAllowed = NewAppError(http.StatusBadRequest, "Return URL is not allowed", "RETURN_URL_NOT_ALLOWED")
 	ExchangeTokenFailed    = NewAppError(http.StatusInternalServerError, "Failed to exchange token", "EXCHANGE_TOKEN_FAILED")
 	ErrFetchProfileFailed  = NewAppError(http.StatusInternalServerError, "Failed to fetch user profile", "FETCH_PROFILE_FAILED")
 )
