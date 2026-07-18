@@ -27,12 +27,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port int    `yaml:"port" env:"PORT" env-default:"8080" validate:"required"`
-	Mode string `yaml:"mode" env:"MODE" env-default:"development" validate:"required"`
-	// AllowedOrigins is the comma-separated list of origins permitted for both
-	// CORS and WebSocket Origin checks. Example:
-	//   ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
-	AllowedOrigins []string `yaml:"allowedOrigins" env:"ALLOWED_ORIGINS" env-separator:"," env-default:"http://localhost:3000,http://localhost:3001"`
+	Port                       int      `yaml:"port" env:"PORT" env-default:"8080" validate:"required"`
+	Mode                       string   `yaml:"mode" env:"MODE" env-default:"development" validate:"required"`
+	AllowedOrigins             []string `yaml:"allowedOrigins" env:"ALLOWED_ORIGINS" env-separator:"," env-default:"http://localhost:3000,http://localhost:3001"`
+	FrontendReturnURLWhitelist []string `yaml:"frontendReturnURLWhitelist" env:"FE_RETURN_URL_WHITELIST" env-separator:"," env-default:"http://localhost:3000/reset-password,http://localhost:3001/reset-password"`
 }
 
 type DBConfig struct {

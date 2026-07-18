@@ -118,7 +118,7 @@ func (s *Server) InitEngine() {
 	}
 
 	// -- Auth Module --
-	authService := service.NewAuthService(authRepo, userRepo, tokenProvider, transactor, taskDistributor, oauthProviders)
+	authService := service.NewAuthService(authRepo, userRepo, tokenProvider, transactor, taskDistributor, oauthProviders, s.cfg.Server.FrontendReturnURLWhitelist)
 	authController := controller.NewAuthController(authService)
 
 	// -- User Module --

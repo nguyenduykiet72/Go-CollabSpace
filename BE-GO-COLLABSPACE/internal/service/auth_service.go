@@ -41,22 +41,24 @@ type TokenProvider interface {
 }
 
 type AuthService struct {
-	authRepo        AuthRepo
-	userRepo        UserAuthRepo
-	tokenProvider   TokenProvider
-	transactor      Transactor
-	taskDistributor worker.TaskDistributor
-	oauthProviders  map[string]infrastructure.OAuthProvider
+	authRepo                   AuthRepo
+	userRepo                   UserAuthRepo
+	tokenProvider              TokenProvider
+	transactor                 Transactor
+	taskDistributor            worker.TaskDistributor
+	oauthProviders             map[string]infrastructure.OAuthProvider
+	frontendReturnURLWhitelist []string
 }
 
-func NewAuthService(authRepo AuthRepo, userRepo UserAuthRepo, tokenProvider TokenProvider, transactor Transactor, taskDistributor worker.TaskDistributor, providers map[string]infrastructure.OAuthProvider) *AuthService {
+func NewAuthService(authRepo AuthRepo, userRepo UserAuthRepo, tokenProvider TokenProvider, transactor Transactor, taskDistributor worker.TaskDistributor, providers map[string]infrastructure.OAuthProvider, frontendReturnURLWhitelist []string) *AuthService {
 	return &AuthService{
-		authRepo:        authRepo,
-		userRepo:        userRepo,
-		tokenProvider:   tokenProvider,
-		transactor:      transactor,
-		taskDistributor: taskDistributor,
-		oauthProviders:  providers,
+		authRepo:                   authRepo,
+		userRepo:                   userRepo,
+		tokenProvider:              tokenProvider,
+		transactor:                 transactor,
+		taskDistributor:            taskDistributor,
+		oauthProviders:             providers,
+		frontendReturnURLWhitelist: frontendReturnURLWhitelist,
 	}
 }
 
@@ -195,6 +197,10 @@ func (a *AuthService) Refresh(ctx context.Context, refreshToken, userAgent strin
 }
 
 func (a *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPasswordRequest) error {
+	if _, err := validateAllowedReturnURL(dto.ReturnURL, a.frontendReturnURLWhitelist); err != nil {
+		return err
+	}
+
 	user, err := a.userRepo.GetUserByEmail(ctx, dto.Email)
 	if err != nil {
 		if errors.Is(err, apperror.ErrNotFound) {
@@ -205,6 +211,10 @@ func (a *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPassword
 
 	rawToken := uuid.New().String() + uuid.New().String()
 	hashedToken := hash.HashToken(rawToken)
+	resetURL, err := buildAllowedReturnURL(dto.ReturnURL, a.frontendReturnURLWhitelist, rawToken)
+	if err != nil {
+		return err
+	}
 
 	resetData := &model.PasswordReset{
 		PassUserID:    user.UserID,
@@ -217,8 +227,8 @@ func (a *AuthService) ForgotPassword(ctx context.Context, dto dto.ForgotPassword
 	}
 
 	payload := &worker.PayloadSendResetEmail{
-		ToEmail:    dto.Email,
-		ResetToken: rawToken,
+		ToEmail:  dto.Email,
+		ResetURL: resetURL,
 	}
 
 	// We intentionally don't surface enqueue errors to the caller (timing-attack
