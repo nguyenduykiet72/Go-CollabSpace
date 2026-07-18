@@ -19,9 +19,7 @@ func NewResendEmailSender(apiKey string, fromEmail string) *ResendEmailSender {
 	}
 }
 
-func (s *ResendEmailSender) SendResetPasswordEmail(toEmail string, resetToken string) error {
-	resetLink := fmt.Sprintf("http://localhost:3000/reset-password?token=%s", resetToken)
-
+func (s *ResendEmailSender) SendResetPasswordEmail(toEmail string, resetURL string) error {
 	params := &resend.SendEmailRequest{
 		From:    s.fromEmail,
 		To:      []string{toEmail},
@@ -32,7 +30,7 @@ func (s *ResendEmailSender) SendResetPasswordEmail(toEmail string, resetToken st
 			<a href="%s" style="padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">Reset Password</a>
 			<p>This link will expire in 15 minutes.</p>
 			<p>If you didn't request this, you can safely ignore this email.</p>
-		`, resetLink),
+		`, resetURL),
 	}
 
 	_, err := s.client.Emails.Send(params)

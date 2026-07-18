@@ -107,6 +107,7 @@ Go-CollabSpace/
 ├── config/
 │   ├── config.go                  # Config loader (CONFIG_PATH → MODE → env fallback)
 │   ├── config.development.yml     # Dev defaults (non-secret values only)
+│   ├── config.stage.yml           # Stage defaults (non-secret values only)
 │   └── config.production.yml      # Prod defaults (non-secret values only)
 ├── internal/
 │   ├── common/
@@ -200,9 +201,10 @@ Configuration is loaded in the following precedence (highest wins):
 | Variable | Description | Default | Required |
 |---|---|---|---|
 | `PORT` | Server port | `8080` | No |
-| `MODE` | App mode (`development` / `production`) | `development` | No |
+| `MODE` | App mode (`development` / `stage` / `production`) | `development` | No |
 | `CONFIG_PATH` | Explicit config file path | — | No |
 | `ALLOWED_ORIGINS` | Comma-separated CORS/WS origin whitelist | `http://localhost:3000,http://localhost:3001` | No |
+| `FE_RETURN_URL_WHITELIST` | Comma-separated frontend return URL whitelist for backend-generated links, e.g. password reset | `http://localhost:3000/reset-password,http://localhost:3001/reset-password` | No |
 | `DB_HOST` | PostgreSQL host | — | Yes |
 | `DB_PORT` | PostgreSQL port | — | Yes |
 | `DB_USER` | Database user | — | Yes |
@@ -256,6 +258,17 @@ Refresh tokens are rotated: each `/auth/refresh` call revokes the old session an
 | `POST` | `/auth/forgot-password` | Request password reset email | 5/hour |
 | `POST` | `/auth/reset-password` | Reset password with token | 10/hour |
 | `POST` | `/auth/oauth/:provider` | Social login (Google) | 10/min |
+
+`POST /auth/forgot-password` requires the frontend reset page URL in the request body:
+
+```json
+{
+  "email": "user@example.com",
+  "returnUrl": "https://app.example.com/reset-password"
+}
+```
+
+The backend only accepts `returnUrl` values present in `FE_RETURN_URL_WHITELIST`, then appends the reset token server-side.
 
 #### Users (Protected)
 

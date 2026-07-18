@@ -1,6 +1,12 @@
 server:
   port: 8080
   mode: "development"
+  allowedOrigins:
+    - "http://localhost:3000"
+    - "http://localhost:3001"
+  frontendReturnURLWhitelist:
+    - "http://localhost:3000/reset-password"
+    - "http://localhost:3001/reset-password"
 
 database:
   host: "localhost"

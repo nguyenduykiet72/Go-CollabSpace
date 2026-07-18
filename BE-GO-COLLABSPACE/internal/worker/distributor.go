@@ -20,8 +20,8 @@ type PayloadUpdateSearchIndex struct {
 }
 
 type PayloadSendResetEmail struct {
-	ToEmail    string `json:"to_email"`
-	ResetToken string `json:"reset_token"`
+	ToEmail  string `json:"to_email"`
+	ResetURL string `json:"reset_url"`
 }
 
 type TaskDistributor interface {
